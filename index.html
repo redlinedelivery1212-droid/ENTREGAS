@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedLine - Entregador</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #f46b21;
+            --success: #28a745;
+            --info: #3498db;
+            --bg: #f4f4f4;
+            --white: #ffffff;
+            --text: #333;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+
+        body { background: var(--bg); color: var(--text); padding-bottom: 80px; }
+
+        header {
+            background: var(--white);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .container { padding: 15px; }
+
+        .section-title {
+            font-size: 14px;
+            color: #777;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin: 20px 0 10px 5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Order Cards */
+        .order-card {
+            background: var(--white);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border-left: 5px solid #ddd;
+        }
+
+        .order-card.ready { border-left-color: var(--success); }
+        .order-card.shipping { border-left-color: var(--info); }
+
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+
+        .client-info { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .client-info img { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; }
+        .client-info h4 { font-size: 16px; margin: 0; }
+        .client-info p { font-size: 12px; color: #666; }
+
+        .address-box {
+            background: #f9f9f9;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            border: 1px solid #eee;
+        }
+
+        .order-details { font-size: 13px; color: #444; margin-bottom: 15px; }
+
+        /* Action Buttons */
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn {
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: 0.3s;
+            text-decoration: none;
+        }
+        .btn-map { background: #e0e0e0; color: #333; }
+        .btn-wpp { background: #25d366; color: white; }
+        .btn-action { grid-column: span 2; margin-top: 5px; }
+        .btn-shipping { background: var(--info); color: white; }
+        .btn-success { background: var(--success); color: white; }
+
+        /* Summary Footer */
+        .stats-bar {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            background: #222;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        #empty-state {
+            text-align: center;
+            padding: 50px 20px;
+            color: #999;
+        }
+        #empty-state i { font-size: 50px; margin-bottom: 15px; opacity: 0.3; }
+
+        .tag-brinde {
+            background: #fff0f0;
+            color: #d63031;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        @keyframes floatCoin {
+            0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(-200px) rotate(360deg); opacity: 0; }
+        }
+        .coin-effect {
+            position: fixed;
+            z-index: 9999;
+            color: #f1c40f;
+            font-size: 24px;
+            pointer-events: none;
+            animation: floatCoin 1s ease-out forwards;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="https://cxpdwntsjvyvyglkwgbj.supabase.co/storage/v1/object/public/pics/logoo.png" style="height: 40px;">
+            <h2 style="font-size: 18px; color: var(--primary);">RedLine Logística</h2>
+        </div>
+        <div id="status-dot" style="display: flex; align-items: center; gap: 5px; font-size: 12px;">
+            <i class="fa-solid fa-circle" style="color: var(--success); font-size: 8px;"></i> Online
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- PEDIDOS DISPONÍVEIS (PRONTOS NA COZINHA) -->
+        <div class="section-title"><i class="fa-solid fa-box-open"></i> Disponíveis para Coleta</div>
+        <div id="list-ready"></div>
+
+        <!-- EM ROTA DE ENTREGA -->
+        <div class="section-title"><i class="fa-solid fa-motorcycle"></i> Minhas Entregas em Curso</div>
+        <div id="list-shipping"></div>
+
+        <!-- HISTÓRICO -->
+        <div class="section-title"><i class="fa-solid fa-clock-rotate-left"></i> Histórico Recente (Hoje)</div>
+        <div id="list-history"></div>
+
+        <div id="empty-state" style="display: none;">
+            <i class="fa-solid fa-route"></i>
+            <p>Nenhuma entrega pendente por enquanto.<br>Fique atento às notificações!</p>
+        </div>
+    </div>
+
+    <div class="stats-bar" style="flex-direction: column; height: auto; gap: 8px; padding: 10px 20px;">
+        <div style="display: flex; justify-content: space-between; width: 100%;">
+            <span>Entregas Hoje: <strong id="count-delivered">0</strong></span>
+            <span>Hoje: <strong id="revenue-delivered">R$ 0,00</strong></span>
+        </div>
+        <div style="display: flex; justify-content: space-between; width: 100%; border-top: 1px solid #444; padding-top: 5px; font-size: 12px; color: #aaa;">
+            <span>Total Geral: <strong id="total-delivered-count">0</strong></span>
+            <span>Saldo Total: <strong id="total-revenue">R$ 0,00</strong></span>
+        </div>
+    </div>
+
+    <!-- Áudio de Notificação -->
+    <audio id="notif-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"></audio>
+    <audio id="coin-sound" src="https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3"></audio>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, onValue, set, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyCZkks4TsMP5sIAe2b0_y63OsplgLYL2iI",
+        authDomain: "ivilyn-kingdoms-server.firebaseapp.com",
+        databaseURL: "https://ivilyn-kingdoms-server-default-rtdb.firebaseio.com",
+        projectId: "ivilyn-kingdoms-server",
+        storageBucket: "ivilyn-kingdoms-server.firebasestorage.app",
+        messagingSenderId: "849227342580",
+        appId: "1:849227342580:web:30eccfe53d225adc0474a1"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let lastOrderCount = 0;
+
+    onValue(ref(db, 'orders'), (snap) => {
+        const data = snap.val();
+        renderOrders(data);
+    });
+
+    function renderOrders(data) {
+        const listReady = document.getElementById('list-ready');
+        const listShipping = document.getElementById('list-shipping');
+        const listHistory = document.getElementById('list-history');
+        const emptyState = document.getElementById('empty-state');
+        
+        listReady.innerHTML = "";
+        listShipping.innerHTML = "";
+        listHistory.innerHTML = "";
+        
+        let countReady = 0;
+        let countInRoute = 0;
+        let myTotalToday = 0;
+        let myCountToday = 0;
+        let myTotalGeneral = 0;
+        let myCountGeneral = 0;
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        if (data) {
+            const entries = Object.entries(data).reverse();
+            
+            entries.forEach(([key, o]) => {
+                const orderDate = new Date(o.timestamp).toISOString().split('T')[0];
+
+                if (o.status === 'preparando') {
+                    countReady++;
+                    listReady.innerHTML += createOrderCard(key, o, 'ready');
+                } 
+                else if (o.status === 'caminho') {
+                    countInRoute++;
+                    listShipping.innerHTML += createOrderCard(key, o, 'shipping');
+                }
+                else if (o.status === 'pago') {
+                    myTotalGeneral += 7;
+                    myCountGeneral++;
+                    
+                    if (orderDate === todayStr) {
+                        myTotalToday += 7;
+                        myCountToday++;
+                        listHistory.innerHTML += createHistoryCard(key, o);
+                    }
+                }
+            });
+        }
+
+        if (countReady > lastOrderCount) {
+            document.getElementById('notif-sound').play();
+        }
+        lastOrderCount = countReady;
+
+        emptyState.style.display = (countReady === 0 && countInRoute === 0) ? 'block' : 'none';
+        
+        document.getElementById('count-delivered').innerText = myCountToday;
+        document.getElementById('revenue-delivered').innerText = `R$ ${myTotalToday.toFixed(2).replace('.', ',')}`;
+        
+        document.getElementById('total-delivered-count').innerText = myCountGeneral;
+        document.getElementById('total-revenue').innerText = `R$ ${myTotalGeneral.toFixed(2).replace('.', ',')}`;
+    }
+
+    function createHistoryCard(key, o) {
+        const timeDelivery = o.deliveredAt ? new Date(o.deliveredAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
+        const timePickup = o.pickedUpAt ? new Date(o.pickedUpAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
+        
+        return `
+            <div class="order-card" style="opacity: 0.8; border-left: 5px solid #28a745; padding: 10px 15px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="font-size: 13px;">#${key.slice(-4).toUpperCase()} - ${o.cliente.nome}</strong>
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                            <i class="fa-solid fa-truck-ramp-box"></i> Coleta: ${timePickup} | 
+                            <i class="fa-solid fa-check"></i> Entrega: ${timeDelivery}
+                        </div>
+                    </div>
+                    <span style="font-weight: bold; color: var(--success); font-size: 13px;">+ R$ 7,00</span>
+                </div>
+            </div>
+        `;
+    }
+
+    function createOrderCard(key, o, type) {
+        const c = o.cliente || {};
+        const itemsList = o.items.map(i => `${i.qty}x ${i.name}`).join(', ');
+        const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.rua + ',' + c.numero + ',' + c.bairro)}`;
+        const wppUrl = `https://wa.me/55${c.contato.replace(/\D/g,'')}`;
+        
+        const hasReward = o.items.some(i => i.isReward);
+        const hasFreeShipping = o.deliveryFee === 0;
+
+        const actionButton = type === 'ready' 
+            ? `<button class="btn btn-action btn-shipping" onclick="updateStatus('${key}', 'caminho')"><i class="fa-solid fa-motorcycle"></i> Coletar e Iniciar Entrega</button>`
+            : `<button class="btn btn-action btn-success" onclick="updateStatus('${key}', 'pago')"><i class="fa-solid fa-check-double"></i> Confirmar Entrega e Pagamento</button>`;
+
+        return `
+            <div class="order-card ${type}">
+                <div class="order-header">
+                    <span style="font-weight:bold; font-size:13px;">#${key.slice(-4).toUpperCase()}</span>
+                    <span style="color:var(--primary); font-weight:bold;">R$ ${o.total.toFixed(2).replace('.',',')}</span>
+                </div>
+                
+                <div class="client-info">
+                    <img src="${c.foto || 'https://api.dicebear.com/7.x/big-smile/svg?seed=Aneka'}">
+                    <div>
+                        <h4>${c.nome}</h4>
+                        <p><i class="fa-solid fa-phone"></i> ${c.contato}</p>
+                    </div>
+                </div>
+
+                <div class="address-box">
+                    <strong>Rua:</strong> ${c.rua}<br>
+                    <strong>Número:</strong> ${c.numero}<br>
+                    <strong>Bairro:</strong> ${c.bairro}<br>
+                    ${c.ref ? `<strong>Ponto de Ref:</strong> <span style="color:var(--primary)">${c.ref}</span>` : ''}
+                </div>
+
+                <div class="order-details">
+                    <i class="fa-solid fa-bag-shopping"></i> ${itemsList}
+                    ${o.extras ? `<br><small>+ ${o.extras.join(', ')}</small>` : ''}
+                    ${hasReward ? `<br><span class="tag-brinde">CONTÉM RECOMPENSA GRÁTIS</span>` : ''}
+                </div>
+
+                <div class="btn-group">
+                    <a href="${mapUrl}" target="_blank" class="btn btn-map"><i class="fa-solid fa-location-dot"></i> Ver Mapa</a>
+                    <a href="${wppUrl}" target="_blank" class="btn btn-wpp"><i class="fa-brands fa-whatsapp"></i> Contato</a>
+                    ${actionButton}
+                </div>
+            </div>
+        `;
+    }
+
+    window.updateStatus = (key, status) => {
+        const orderRef = ref(db, `orders/${key}`);
+        const updates = { status: status };
+        
+        if (status === 'caminho') {
+            updates.pickedUpAt = Date.now();
+        } else if (status === 'pago') {
+            updates.deliveredAt = Date.now();
+        }
+
+        update(orderRef, updates)
+        .then(() => {
+            if(status === 'pago') {
+                showCoinEffect();
+                alert("Entrega finalizada com sucesso! Bom trabalho.");
+            }
+        });
+    };
+
+    function showCoinEffect() {
+        const sound = document.getElementById('coin-sound');
+        if(sound) sound.play();
+        for(let i=0; i<15; i++) {
+            const coin = document.createElement('i');
+            coin.className = 'fa-solid fa-coins coin-effect';
+            coin.style.left = Math.random() * 100 + 'vw';
+            coin.style.top = '80vh';
+            coin.style.animationDelay = (Math.random() * 0.5) + 's';
+            document.body.appendChild(coin);
+            setTimeout(() => coin.remove(), 1500);
+        }
+    }
+
+</script>
+</body>
+</html>
