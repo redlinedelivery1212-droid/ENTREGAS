@@ -123,6 +123,13 @@
         }
         #empty-state i { font-size: 50px; margin-bottom: 15px; opacity: 0.3; }
 
+        .driver-card img {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
         .tag-brinde {
             background: #fff0f0;
             color: #d63031;
@@ -149,13 +156,43 @@
 </head>
 <body>
 
+    <div id="login-overlay" style="display: none;">
+        <img src="https://cxpdwntsjvyvyglkwgbj.supabase.co/storage/v1/object/public/pics/logoo.png" style="height: 45px; margin-bottom: 20px;">
+        <h2 style="margin-bottom: 10px;">Bem-vindo, Entregador</h2>
+        <p style="color: #666; margin-bottom: 30px;">Selecione seu perfil para continuar</p>
+        
+        <div class="driver-card" onclick="selectDriver('edson', 'Edson')">
+            <img src="https://cdn-icons-png.flaticon.com/512/149/149071.png">
+            <div style="text-align: left;">
+                <strong style="display: block;">Edson</strong>
+                <span style="font-size: 12px; color: #888;">Entregador RedLine</span>
+            </div>
+        </div>
+
+        <div class="driver-card" onclick="selectDriver('will', 'Will')">
+            <img src="https://cdn-icons-png.flaticon.com/512/149/149071.png">
+            <div style="text-align: left;">
+                <strong style="display: block;">Will</strong>
+                <span style="font-size: 12px; color: #888;">Entregador RedLine</span>
+            </div>
+        </div>
+    </div>
+
     <header>
         <div style="display: flex; align-items: center; gap: 10px;">
             <img src="https://cxpdwntsjvyvyglkwgbj.supabase.co/storage/v1/object/public/pics/logoo.png" style="height: 40px;">
-            <h2 style="font-size: 18px; color: var(--primary);">RedLine Logística</h2>
+            <div>
+                <h2 style="font-size: 16px; color: var(--primary); line-height: 1;">RedLine Logística</h2>
+                <span id="display-driver-name" style="font-size: 11px; color: #666; font-weight: bold;"></span>
+            </div>
         </div>
-        <div id="status-dot" style="display: flex; align-items: center; gap: 5px; font-size: 12px;">
-            <i class="fa-solid fa-circle" style="color: var(--success); font-size: 8px;"></i> Online
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div id="status-dot" style="display: flex; align-items: center; gap: 5px; font-size: 12px;">
+                <i class="fa-solid fa-circle" style="color: var(--success); font-size: 8px;"></i> Online
+            </div>
+            <button onclick="logoutDriver()" style="background: none; border: none; color: #e74c3c; font-size: 12px; font-weight: bold; cursor: pointer;">
+                <i class="fa-solid fa-right-from-bracket"></i> Sair
+            </button>
         </div>
     </header>
 
@@ -211,6 +248,26 @@
     const db = getDatabase(app);
 
     let lastOrderCount = 0;
+    let currentDriverId = localStorage.getItem('redline_driver_id');
+    let currentDriverName = localStorage.getItem('redline_driver_name');
+
+    if (!currentDriverId) {
+        document.getElementById('login-overlay').style.display = 'flex';
+    } else {
+        document.getElementById('display-driver-name').innerText = `Entregador: ${currentDriverName}`;
+    }
+
+    window.selectDriver = (id, name) => {
+        localStorage.setItem('redline_driver_id', id);
+        localStorage.setItem('redline_driver_name', name);
+        location.reload();
+    };
+
+    window.logoutDriver = () => {
+        localStorage.removeItem('redline_driver_id');
+        localStorage.removeItem('redline_driver_name');
+        location.reload();
+    };
 
     onValue(ref(db, 'orders'), (snap) => {
         const data = snap.val();
@@ -242,15 +299,15 @@
             entries.forEach(([key, o]) => {
                 const orderDate = new Date(o.timestamp).toISOString().split('T')[0];
 
-                if (o.status === 'preparando') {
+                if (o.status === 'preparando' && o.driverId === currentDriverId) {
                     countReady++;
                     listReady.innerHTML += createOrderCard(key, o, 'ready');
                 } 
-                else if (o.status === 'caminho') {
+                else if (o.status === 'caminho' && o.driverId === currentDriverId) {
                     countInRoute++;
                     listShipping.innerHTML += createOrderCard(key, o, 'shipping');
                 }
-                else if (o.status === 'pago') {
+                else if (o.status === 'pago' && o.driverId === currentDriverId) {
                     myTotalGeneral += 7;
                     myCountGeneral++;
                     
@@ -299,7 +356,11 @@
 
     function createOrderCard(key, o, type) {
         const c = o.cliente || {};
-        const itemsList = o.items.map(i => `${i.qty}x ${i.name}`).join(', ');
+        const itemsList = o.items.map(i => {
+            let base = `${i.qty}x ${i.name}`;
+            if(i.drink) base += ` <span style="color:red; font-weight:900; background:#fff0f0; padding:2px 4px; border-radius:4px; border:1px solid red; font-size:11px;">REFRIGERANTE: ${i.drink.toUpperCase()}</span>`;
+            return base;
+        }).join('<br>');
         const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.rua + ',' + c.numero + ',' + c.bairro)}`;
         const wppUrl = `https://wa.me/55${c.contato.replace(/\D/g,'')}`;
         
@@ -307,7 +368,7 @@
         const hasFreeShipping = o.deliveryFee === 0;
 
         const actionButton = type === 'ready' 
-            ? `<button class="btn btn-action btn-shipping" onclick="updateStatus('${key}', 'caminho')"><i class="fa-solid fa-motorcycle"></i> Coletar e Iniciar Entrega</button>`
+            ? `<button class="btn btn-action btn-shipping" onclick="updateStatus('${key}', 'caminho')"><i class="fa-solid fa-motorcycle"></i> Iniciar Entrega</button>`
             : `<button class="btn btn-action btn-success" onclick="updateStatus('${key}', 'pago')"><i class="fa-solid fa-check-double"></i> Confirmar Entrega e Pagamento</button>`;
 
         return `
