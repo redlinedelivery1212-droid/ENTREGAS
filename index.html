@@ -301,11 +301,15 @@
 
                 if (o.status === 'preparando' && o.driverId === currentDriverId) {
                     countReady++;
-                    listReady.innerHTML += createOrderCard(key, o, 'ready');
+                    const dailyOrders = Object.entries(data).filter(([_, ord]) => new Date(ord.timestamp).toDateString() === new Date(o.timestamp).toDateString()).sort((a, b) => a[1].timestamp - b[1].timestamp);
+                    const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
+                    listReady.innerHTML += createOrderCard(key, o, 'ready', orderNum);
                 } 
                 else if (o.status === 'caminho' && o.driverId === currentDriverId) {
                     countInRoute++;
-                    listShipping.innerHTML += createOrderCard(key, o, 'shipping');
+                    const dailyOrders = Object.entries(data).filter(([_, ord]) => new Date(ord.timestamp).toDateString() === new Date(o.timestamp).toDateString()).sort((a, b) => a[1].timestamp - b[1].timestamp);
+                    const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
+                    listShipping.innerHTML += createOrderCard(key, o, 'shipping', orderNum);
                 }
                 else if (o.status === 'pago' && o.driverId === currentDriverId) {
                     myTotalGeneral += 7;
@@ -314,7 +318,9 @@
                     if (orderDate === todayStr) {
                         myTotalToday += 7;
                         myCountToday++;
-                        listHistory.innerHTML += createHistoryCard(key, o);
+                        const dailyOrders = Object.entries(data).filter(([_, ord]) => new Date(ord.timestamp).toDateString() === new Date(o.timestamp).toDateString()).sort((a, b) => a[1].timestamp - b[1].timestamp);
+                        const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
+                        listHistory.innerHTML += createHistoryCard(key, o, orderNum);
                     }
                 }
             });
@@ -334,7 +340,7 @@
         document.getElementById('total-revenue').innerText = `R$ ${myTotalGeneral.toFixed(2).replace('.', ',')}`;
     }
 
-    function createHistoryCard(key, o) {
+    function createHistoryCard(key, o, orderNum = "") {
         const timeDelivery = o.deliveredAt ? new Date(o.deliveredAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
         const timePickup = o.pickedUpAt ? new Date(o.pickedUpAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
         
@@ -342,7 +348,7 @@
             <div class="order-card" style="opacity: 0.8; border-left: 5px solid #28a745; padding: 10px 15px; margin-bottom: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <strong style="font-size: 13px;">#${key.slice(-4).toUpperCase()} - ${o.cliente.nome}</strong>
+                        <strong style="font-size: 13px;">PEDIDO ${orderNum} - ${o.cliente.nome}</strong>
                         <div style="font-size: 11px; color: #666; margin-top: 3px;">
                             <i class="fa-solid fa-truck-ramp-box"></i> Coleta: ${timePickup} | 
                             <i class="fa-solid fa-check"></i> Entrega: ${timeDelivery}
@@ -354,16 +360,18 @@
         `;
     }
 
-    function createOrderCard(key, o, type) {
+    function createOrderCard(key, o, type, orderNum = "") {
         const c = o.cliente || {};
         
         let paymentBadge = "";
         let statusBadge = "";
 
-        if (o.status === 'pago' || o.status === 'pago_confirmado') {
-            statusBadge = `<span style="background:#28a745; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">PAGO</span>`;
+        const numBadge = `<span style="background:#000; color:#fff; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px; margin-left:5px;">PEDIDO ${orderNum}</span>`;
+
+        if (o.status === 'pago' || o.status === 'pago_confirmado' || o.paymentMethod === 'pix') {
+            statusBadge = `<span style="background:#28a745; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">PAGO</span>` + numBadge;
         } else {
-            statusBadge = `<span style="background:#e74c3c; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">NÃO PAGO</span>`;
+            statusBadge = `<span style="background:#e74c3c; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">NÃO PAGO</span>` + numBadge;
         }
 
         if (o.paymentMethod === 'especie') {
@@ -392,7 +400,6 @@
             <div class="order-card ${type}">
                 <div class="order-header">
                     <div style="display:flex; flex-direction:column; gap:5px;">
-                        <span style="font-weight:bold; font-size:13px;">#${key.slice(-4).toUpperCase()}</span>
                         ${statusBadge}
                     </div>
                     <div style="text-align:right;">
@@ -425,6 +432,7 @@
                 <div class="btn-group">
                     <a href="${mapUrl}" target="_blank" class="btn btn-map"><i class="fa-solid fa-location-dot"></i> Ver Mapa</a>
                     <a href="${wppUrl}" target="_blank" class="btn btn-wpp"><i class="fa-brands fa-whatsapp"></i> Contato</a>
+                    <a href="https://wa.me/559881422644" target="_blank" class="btn" style="background: #e74c3c; color: white; grid-column: span 2;"><i class="fa-solid fa-headset"></i> Mensagem para o RedLine</a>
                     ${actionButton}
                 </div>
             </div>
@@ -432,6 +440,14 @@
     }
 
     window.updateStatus = (key, status) => {
+        if (status === 'caminho') {
+            if (!confirm("Tem certeza que você finalizou a coleta?")) return;
+        }
+
+        if (status === 'pago') {
+            if (!confirm("Tem certeza que deseja confirmar a entrega e o pagamento deste pedido?")) return;
+        }
+
         const orderRef = ref(db, `orders/${key}`);
         const updates = { status: status };
         
