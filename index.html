@@ -152,12 +152,18 @@
             pointer-events: none;
             animation: floatCoin 1s ease-out forwards;
         }
+        @keyframes blink-red {
+            0% { opacity: 1; background: #e74c3c; }
+            50% { opacity: 0.7; background: #c0392b; }
+            100% { opacity: 1; background: #e74c3c; }
+        }
+        .timer-blink { animation: blink-red 0.8s infinite !important; }
     </style>
 </head>
 <body>
 
     <div id="login-overlay" style="display: none;">
-        <img src="https://cxpdwntsjvyvyglkwgbj.supabase.co/storage/v1/object/public/pics/logoo.png" style="height: 45px; margin-bottom: 20px;">
+        <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="height: 80px; border-radius: 15px; margin-bottom: 20px;">
         <h2 style="margin-bottom: 10px;">Bem-vindo, Entregador</h2>
         <p style="color: #666; margin-bottom: 30px;">Selecione seu perfil para continuar</p>
         
@@ -180,7 +186,7 @@
 
     <header>
         <div style="display: flex; align-items: center; gap: 10px;">
-            <img src="https://cxpdwntsjvyvyglkwgbj.supabase.co/storage/v1/object/public/pics/logoo.png" style="height: 40px;">
+            <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="height: 40px; border-radius: 8px;">
             <div>
                 <h2 style="font-size: 16px; color: var(--primary); line-height: 1;">RedLine Logística</h2>
                 <span id="display-driver-name" style="font-size: 11px; color: #666; font-weight: bold;"></span>
@@ -375,7 +381,7 @@
         }
 
         if (o.paymentMethod === 'especie') {
-            paymentBadge = `<span style="color:#6c5ce7; font-weight:bold; font-size:12px;">(Pagamento em espécie)</span>`;
+            paymentBadge = `<span style="color:#6c5ce7; font-weight:bold; font-size:12px;">(Pagamento em espécie) ${o.change ? `<br><span style="color:red; font-weight:bold;">TROCO P/: ${o.change}</span>` : ''}</span>`;
         } else if (o.paymentMethod === 'credito') {
             paymentBadge = `<span style="color:#0984e3; font-weight:bold; font-size:12px;">(Pagamento no crédito maquininha)</span>`;
         } else {
@@ -410,8 +416,16 @@
                 
                 <div class="client-info">
                     <img src="${c.foto || 'https://api.dicebear.com/7.x/big-smile/svg?seed=Aneka'}">
-                    <div>
-                        <h4>${c.nome}</h4>
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <h4>${c.nome}</h4>
+                            <div>
+                                <div class="cronometro-box" data-timestamp="${o.timestamp}" style="display: inline-block; padding: 4px 10px; border-radius: 6px; color: #fff; font-weight: bold; font-size: 12px; background: #28a745; text-align: center;">
+                                    00:00
+                                </div>
+                                <span class="alerta-text" style="display:none; color: red; font-weight: bold; font-size: 12px; margin-left: 5px;">( ALERTA )</span>
+                            </div>
+                        </div>
                         <p><i class="fa-solid fa-phone"></i> ${c.contato}</p>
                     </div>
                 </div>
@@ -479,6 +493,37 @@
             setTimeout(() => coin.remove(), 1500);
         }
     }
+
+    setInterval(() => {
+        document.querySelectorAll('.cronometro-box').forEach(box => {
+            const start = parseInt(box.dataset.timestamp);
+            const agora = Date.now();
+            const diff = Math.floor((agora - start) / 1000);
+            const min = Math.floor(diff / 60);
+            const sec = diff % 60;
+            const alerta = box.parentElement.querySelector('.alerta-text');
+            
+            box.innerText = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+            box.classList.remove('timer-blink');
+            if(alerta) alerta.style.display = "none";
+
+            if (min < 20) {
+                box.style.background = "#28a745";
+                box.style.color = "#fff";
+            } else if (min < 40) {
+                box.style.background = "#f1c40f";
+                box.style.color = "#000";
+            } else if (min < 60) {
+                box.style.background = "#f46b21";
+                box.style.color = "#fff";
+            } else {
+                box.style.background = "#e74c3c";
+                box.style.color = "#fff";
+                box.classList.add('timer-blink');
+                if(alerta) alerta.style.display = "inline";
+            }
+        });
+    }, 1000);
 
 </script>
 </body>
