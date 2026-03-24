@@ -297,23 +297,24 @@
         let myTotalGeneral = 0;
         let myCountGeneral = 0;
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        const getBrazDate = (date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(date);
+        const todayStr = getBrazDate(new Date());
 
         if (data) {
             const entries = Object.entries(data).sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
             
             entries.forEach(([key, o]) => {
-                const orderDate = new Date(o.timestamp).toISOString().split('T')[0];
+                const orderDate = getBrazDate(new Date(o.timestamp));
 
                 if (o.status === 'preparando' && o.driverId === currentDriverId) {
                     countReady++;
-                    const dailyOrders = Object.entries(data).filter(([_, ord]) => new Date(ord.timestamp).toDateString() === new Date(o.timestamp).toDateString()).sort((a, b) => a[1].timestamp - b[1].timestamp);
+                    const dailyOrders = Object.entries(data).filter(([_, ord]) => getBrazDate(new Date(ord.timestamp)) === orderDate).sort((a, b) => a[1].timestamp - b[1].timestamp);
                     const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
                     listReady.innerHTML += createOrderCard(key, o, 'ready', orderNum);
                 } 
                 else if (o.status === 'caminho' && o.driverId === currentDriverId) {
                     countInRoute++;
-                    const dailyOrders = Object.entries(data).filter(([_, ord]) => new Date(ord.timestamp).toDateString() === new Date(o.timestamp).toDateString()).sort((a, b) => a[1].timestamp - b[1].timestamp);
+                    const dailyOrders = Object.entries(data).filter(([_, ord]) => getBrazDate(new Date(ord.timestamp)) === orderDate).sort((a, b) => a[1].timestamp - b[1].timestamp);
                     const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
                     listShipping.innerHTML += createOrderCard(key, o, 'shipping', orderNum);
                 }
@@ -324,7 +325,7 @@
                     if (orderDate === todayStr) {
                         myTotalToday += 7;
                         myCountToday++;
-                        const dailyOrders = Object.entries(data).filter(([_, ord]) => new Date(ord.timestamp).toDateString() === new Date(o.timestamp).toDateString()).sort((a, b) => a[1].timestamp - b[1].timestamp);
+                        const dailyOrders = Object.entries(data).filter(([_, ord]) => getBrazDate(new Date(ord.timestamp)) === orderDate).sort((a, b) => a[1].timestamp - b[1].timestamp);
                         const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
                         listHistory.innerHTML += createHistoryCard(key, o, orderNum);
                     }
@@ -347,8 +348,9 @@
     }
 
     function createHistoryCard(key, o, orderNum = "") {
-        const timeDelivery = o.deliveredAt ? new Date(o.deliveredAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
-        const timePickup = o.pickedUpAt ? new Date(o.pickedUpAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
+        const timeOptions = { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' };
+        const timeDelivery = o.deliveredAt ? new Date(o.deliveredAt).toLocaleTimeString('pt-BR', timeOptions) : '--:--';
+        const timePickup = o.pickedUpAt ? new Date(o.pickedUpAt).toLocaleTimeString('pt-BR', timeOptions) : '--:--';
         
         return `
             <div class="order-card" style="opacity: 0.8; border-left: 5px solid #28a745; padding: 10px 15px; margin-bottom: 8px;">
