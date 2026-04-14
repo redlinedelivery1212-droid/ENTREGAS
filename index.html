@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RedLine - Entregador</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
             --primary: #f46b21;
@@ -158,6 +160,11 @@
             100% { opacity: 1; background: #e74c3c; }
         }
         .timer-blink { animation: blink-red 0.8s infinite !important; }
+
+        @keyframes pulse {
+            0% { transform: scale(0.5); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
     </style>
 </head>
 <body>
@@ -202,6 +209,13 @@
         </div>
     </header>
 
+    <div id="inline-map-container" style="width: 100%; height: 300px; position: relative; border-bottom: 2px solid #ddd; background: #eee;">
+        <div id="main-map-display" style="width: 100%; height: 100%; z-index: 1;"></div>
+        <div style="position: absolute; top: 10px; right: 10px; z-index: 100; background: var(--primary); color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+            <i class="fa-solid fa-motorcycle"></i> <span id="map-order-count">0</span> Entregas no Mapa
+        </div>
+    </div>
+
     <div class="container">
         <!-- PEDIDOS DISPONÍVEIS (PRONTOS NA COZINHA) -->
         <div class="section-title"><i class="fa-solid fa-box-open"></i> Disponíveis para Coleta</div>
@@ -212,12 +226,53 @@
         <div id="list-shipping"></div>
 
         <!-- HISTÓRICO -->
-        <div class="section-title"><i class="fa-solid fa-clock-rotate-left"></i> Histórico Recente (Hoje)</div>
-        <div id="list-history"></div>
+    <div class="section-title"><i class="fa-solid fa-clock-rotate-left"></i> Histórico Recente (Hoje)</div>
+    <div id="list-history"></div>
+
+    <!-- MODAL WHATSAPP ENTREGADOR -->
+    <div id="modal-wpp-options" class="modal-overlay" style="z-index: 9000; display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: white; width: 90%; max-width: 350px; border-radius: 20px; padding: 25px; display: flex; flex-direction: column; gap: 12px;">
+            <h3 style="text-align: center; margin-bottom: 10px; color: #333;">Comunicar com Cliente</h3>
+            
+            <button class="btn" style="background: #eee; color: #333;" onclick="sendWppAction('direta')">
+                <i class="fa-brands fa-whatsapp"></i> Conversa direta
+            </button>
+            
+            <button class="btn" style="background: #3498db; color: white;" onclick="sendWppAction('localizacao')">
+                <i class="fa-solid fa-location-crosshairs"></i> Pedir Localização
+            </button>
+            
+            <button class="btn" style="background: #25d366; color: white;" onclick="sendWppAction('cheguei')">
+                <i class="fa-solid fa-house-chimney-user"></i> Cheguei no Local
+            </button>
+            
+            <button class="btn" style="background: #f46b21; color: white;" onclick="sendWppAction('rota')">
+                <i class="fa-solid fa-motorcycle"></i> Estou indo para sua rota
+            </button>
+            
+            <button class="btn-back" onclick="closeWppModal()" style="margin-top: 10px; border: none; background: none; color: #888; font-weight: bold;">Fechar</button>
+        </div>
+    </div>
 
         <div id="empty-state" style="display: none;">
             <i class="fa-solid fa-route"></i>
             <p>Nenhuma entrega pendente por enquanto.<br>Fique atento às notificações!</p>
+        </div>
+    </div>
+
+    <!-- MODAL MAPA GERAL -->
+    <div id="modal-general-map" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 5000; display: none; flex-direction: column;">
+        <header style="box-shadow: none; border-bottom: 1px solid #eee;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-arrow-left" onclick="closeGeneralMap()" style="font-size: 20px; cursor: pointer; padding: 10px;"></i>
+                <h2 style="font-size: 16px;">Mapa de Entregas</h2>
+            </div>
+            <span id="map-order-count" style="font-size: 12px; background: var(--primary); color: white; padding: 2px 8px; border-radius: 10px; font-weight: bold;">0</span>
+        </header>
+        <div id="main-map-display" style="flex: 1; width: 100%;"></div>
+        <div style="padding: 15px; background: #f9f9f9; border-top: 1px solid #eee; display: flex; align-items: center; gap: 10px;">
+            <i class="fa-solid fa-circle-info" style="color: #666;"></i>
+            <p style="font-size: 11px; color: #666; line-height: 1.3;">Os alfinetes mostram a localização exata definida pelos clientes que usaram o marcador no app.</p>
         </div>
     </div>
 
@@ -255,6 +310,96 @@
 
     let lastOrderCount = 0;
     let currentDriverId = localStorage.getItem('redline_driver_id');
+    
+    let generalMap = null;
+    let mapMarkersGroup = null;
+
+    function initInlineMap() {
+        if (!generalMap) {
+            generalMap = L.map('main-map-display').setView([-2.5208, -45.0811], 15);
+            L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                attribution: '© Google'
+            }).addTo(generalMap);
+            mapMarkersGroup = L.layerGroup().addTo(generalMap);
+        }
+        updateMapMarkers();
+    }
+
+    function updateMapMarkers() {
+        if (!mapMarkersGroup) return;
+        mapMarkersGroup.clearLayers();
+
+        // Adiciona Marcador Fixo da Loja RedLine
+        const storePos = [-2.527173554011838, -45.10398087145432];
+        const storeIcon = L.divIcon({
+            html: `<div style="position:relative; display:flex; flex-direction:column; align-items:center;">
+                    <div style="background: #000; color: #fff; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 900; white-space: nowrap; border: 1px solid #f46b21; margin-bottom: 2px;">REDLINE</div>
+                    <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="width: 35px; height: 35px; border-radius: 50%; border: 2px solid #f46b21; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);">
+                   </div>`,
+            iconSize: [40, 50],
+            iconAnchor: [20, 50]
+        });
+        L.marker(storePos, { icon: storeIcon, zIndexOffset: 2000 }).addTo(mapMarkersGroup).bindPopup("<b>RedLine Delivery</b><br>Ponto de Partida");
+        
+        onValue(ref(db, 'orders'), (snap) => {
+            const data = snap.val();
+            let count = 0;
+            const bounds = [];
+
+            if (data) {
+                const entries = Object.entries(data);
+                entries.forEach(([key, o]) => {
+                    if (o.driverId === currentDriverId && (o.status === 'preparando' || o.status === 'caminho')) {
+                        const c = o.cliente || {};
+                        if (c.lat && c.lng) {
+                            count++;
+                            const orderPos = [c.lat, c.lng];
+                            bounds.push(orderPos);
+
+                            const minPassados = Math.floor((Date.now() - o.timestamp) / 60000);
+                            let statusColor = "#28a745"; // Verde (Rápido)
+                            if (minPassados >= 60) statusColor = "#e74c3c"; // Vermelho (Atrasado)
+                            else if (minPassados >= 40) statusColor = "#f46b21"; // Laranja (Alerta)
+                            else if (minPassados >= 20) statusColor = "#f1c40f"; // Amarelo (Atenção)
+
+                            const customIcon = L.divIcon({
+                                html: `<div style="position:relative; display:flex; flex-direction:column; align-items:center;">
+                                        <div style="background: ${statusColor}; color: ${minPassados >= 20 && minPassados < 40 ? 'black' : 'white'}; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 800; white-space: nowrap; border: 1px solid white; margin-bottom: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                                            ${c.nome.split(' ')[0].toUpperCase()} | <span class="map-cronometro" data-timestamp="${o.timestamp}">00:00</span>
+                                        </div>
+                                        <i class="fa-solid fa-location-pin" style="color: ${o.status === 'caminho' ? '#3498db' : '#f46b21'}; font-size: 32px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);"></i>
+                                       </div>`,
+                                iconSize: [100, 50],
+                                iconAnchor: [50, 48],
+                                className: 'custom-driver-marker'
+                            });
+
+                            const marker = L.marker(orderPos, { icon: customIcon }).addTo(mapMarkersGroup);
+                            
+                            const itemsStr = o.items.map(i => `${i.qty}x ${i.name}`).join('<br>');
+                            marker.bindPopup(`
+                                <div style="font-family: sans-serif; min-width: 150px;">
+                                    <strong style="font-size: 14px; color: var(--primary);">${c.nome}</strong><br>
+                                    <span style="font-size: 11px; color: #666;">${c.rua}, ${c.numero}</span><hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
+                                    <div style="font-size: 12px; margin-bottom: 8px;">${itemsStr}</div>
+                                    <a href="https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}" target="_blank" style="display: block; text-align: center; background: #3498db; color: white; text-decoration: none; padding: 5px; border-radius: 5px; font-weight: bold; font-size: 11px;">ABRIR GPS</a>
+                                </div>
+                            `);
+                        }
+                    }
+                });
+            }
+
+            document.getElementById('map-order-count').innerText = count;
+            if (bounds.length > 0) {
+                generalMap.fitBounds(bounds, { padding: [60, 60] });
+            }
+        });
+    }
+
+    window.closeGeneralMap = function() {
+        document.getElementById('modal-general-map').style.display = 'none';
+    };
     let currentDriverName = localStorage.getItem('redline_driver_name');
 
     if (!currentDriverId) {
@@ -275,9 +420,44 @@
         location.reload();
     };
 
+    let activeClientPhone = '';
+
+    window.openWppModal = (phone) => {
+        activeClientPhone = phone;
+        document.getElementById('modal-wpp-options').style.display = 'flex';
+    };
+
+    window.closeWppModal = () => {
+        document.getElementById('modal-wpp-options').style.display = 'none';
+    };
+
+    window.sendWppAction = (type) => {
+        let message = "";
+        const phone = activeClientPhone;
+
+        if (type === 'localizacao') {
+            message = "Oi! Sou da equipe de entrega do RedLine Delivery. Já estou com seu pedido, pode me enviar sua localização atual para eu chegar mais rápido até você? Obrigado!";
+        } else if (type === 'cheguei') {
+            message = "Olá! Sou o entregador do RedLine Delivery. Acabei de chegar ao seu endereço. Estou aguardando aqui na frente!";
+        } else if (type === 'rota') {
+            message = "Olá! Sou o entregador do RedLine Delivery. Já estou com seu pedido e indo para sua rota. Chego em instantes!";
+        }
+
+        const url = message !== "" 
+            ? `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`
+            : `https://wa.me/55${phone}`;
+
+        window.open(url, '_blank');
+        closeWppModal();
+    };
+
     onValue(ref(db, 'orders'), (snap) => {
         const data = snap.val();
         renderOrders(data);
+        if (currentDriverId) {
+            if (!generalMap) initInlineMap();
+            else updateMapMarkers();
+        }
     });
 
     function renderOrders(data) {
@@ -301,7 +481,8 @@
         const todayStr = getBrazDate(new Date());
 
         if (data) {
-            const entries = Object.entries(data).sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
+            // Ordena do MAIS ANTIGO para o MAIS NOVO (mais atrasados aparecem em cima)
+            const entries = Object.entries(data).sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
             
             entries.forEach(([key, o]) => {
                 const orderDate = getBrazDate(new Date(o.timestamp));
@@ -395,7 +576,7 @@
             return base;
         }).join('<br>');
         const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.rua + ',' + c.numero + ',' + c.bairro)}`;
-        const wppUrl = `https://wa.me/55${c.contato.replace(/\D/g,'')}`;
+        const clientPhone = c.contato.replace(/\D/g,'');
         
         const hasReward = o.items.some(i => i.isReward);
         const hasFreeShipping = o.deliveryFee === 0;
@@ -447,7 +628,7 @@
 
                 <div class="btn-group">
                     <a href="${mapUrl}" target="_blank" class="btn btn-map"><i class="fa-solid fa-location-dot"></i> Ver Mapa</a>
-                    <a href="${wppUrl}" target="_blank" class="btn btn-wpp"><i class="fa-brands fa-whatsapp"></i> Contato</a>
+                    <button onclick="openWppModal('${clientPhone}')" class="btn btn-wpp"><i class="fa-brands fa-whatsapp"></i> Contato</button>
                     <a href="https://wa.me/559881422644" target="_blank" class="btn" style="background: #e74c3c; color: white; grid-column: span 2;"><i class="fa-solid fa-headset"></i> Mensagem para o RedLine</a>
                     ${actionButton}
                 </div>
@@ -497,6 +678,7 @@
     }
 
     setInterval(() => {
+        // Atualiza cronômetros dos cards
         document.querySelectorAll('.cronometro-box').forEach(box => {
             const start = parseInt(box.dataset.timestamp);
             const agora = Date.now();
@@ -523,6 +705,22 @@
                 box.style.color = "#fff";
                 box.classList.add('timer-blink');
                 if(alerta) alerta.style.display = "inline";
+            }
+        });
+
+        // Atualiza cronômetros dentro do Mapa Geral
+        document.querySelectorAll('.map-cronometro').forEach(span => {
+            const start = parseInt(span.dataset.timestamp);
+            const agora = Date.now();
+            const diff = Math.floor((agora - start) / 1000);
+            const min = Math.floor(diff / 60);
+            const sec = diff % 60;
+            span.innerText = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+            
+            if (min >= 60) {
+                span.parentElement.style.background = "#e74c3c";
+            } else if (min >= 40) {
+                span.parentElement.style.background = "#f46b21";
             }
         });
     }, 1000);
