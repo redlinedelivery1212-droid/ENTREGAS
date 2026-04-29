@@ -901,20 +901,26 @@
     }
 
     async function calculateZoneFee(lat, lng) {
-        const snap = await get(ref(db, 'settings/map_zones'));
-        const zones = snap.val();
-        if (!zones) return { fee: 4.99, name: "Padrão" };
+        try {
+            const snap = await get(ref(db, 'settings/map_zones'));
+            const zones = snap.val();
+            if (!zones) return { fee: 4.99, name: "Padrão" };
 
-        let detectedZone = { fee: 4.99, name: "Fora de Área / Padrão" };
+            // Ponto atual para teste (Lat, Lng)
+            const point = [lat, lng];
+            let detectedZone = { fee: 4.99, name: "Fora de Área / Padrão" };
 
-        for (const zone of Object.values(zones)) {
-            // VERIFICAÇÃO REAL: Se a coordenada da entrega está DENTRO do desenho (polígono) da zona no mapa
-            if (isPointInPolygon([lat, lng], zone.coords)) {
-                detectedZone = { fee: parseFloat(zone.value), name: zone.name };
-                break; 
+            for (const zone of Object.values(zones)) {
+                // Converte coordenadas do Firebase se necessário e testa o polígono
+                if (zone.coords && isPointInPolygon(point, zone.coords)) {
+                    detectedZone = { fee: parseFloat(zone.value), name: zone.name };
+                    break;
+                }
             }
+            return detectedZone;
+        } catch (e) {
+            return { fee: 4.99, name: "Erro no Cálculo" };
         }
-        return detectedZone;
     }
 
     window.updateStatus = async (key, status) => {
@@ -937,16 +943,39 @@
             updates.pickedUpAt = Date.now();
         } else if (status === 'pago') {
             updates.deliveredAt = Date.now();
+
+            // Localização do entregador no momento exato da entrega
+            const driverSnap = await get(ref(db, `drivers/${currentDriverId}/location`));
+            const dLoc = driverSnap.val();
             
-            if (o.cliente && o.cliente.lat && o.cliente.lng) {
-                const zoneData = await calculateZoneFee(o.cliente.lat, o.cliente.lng);
-                const feeDaZona = parseFloat(zoneData.fee);
+            let finalLat = null;
+            let finalLng = null;
+
+            if (dLoc && dLoc.lat && dLoc.lng) {
+                finalLat = dLoc.lat;
+                finalLng = dLoc.lng;
+                updates.driverLatConfirm = finalLat;
+                updates.driverLngConfirm = finalLng;
+            }
+
+            // O cálculo da zona agora é baseado EXCLUSIVAMENTE na posição do entregador ao clicar em Finalizar
+            if (finalLat && finalLng) {
+                const zoneData = await calculateZoneFee(finalLat, finalLng);
+                const feeReal = parseFloat(zoneData.fee);
                 
                 updates.zoneName = zoneData.name;
-                updates.deliveryFee = feeDaZona;
+                updates.deliveryFee = feeReal;
 
-                const subtotalSemTaxa = parseFloat(o.total) - parseFloat(o.deliveryFee || 0);
-                updates.total = subtotalSemTaxa + feeDaZona;
+                // Recalcula o total do pedido com a taxa correta da zona onde o entregador está
+                const currentFee = parseFloat(o.deliveryFee || 0);
+                const subtotal = parseFloat(o.total) - currentFee;
+                updates.total = subtotal + feeReal;
+                
+                console.log(`Entrega confirmada em: ${zoneData.name} | Taxa: R$ ${feeReal}`);
+            } else {
+                // Caso o GPS do entregador falhe ou esteja desligado
+                updates.zoneName = "Entregador sem GPS";
+                updates.deliveryFee = parseFloat(o.deliveryFee || 4.99);
             }
         }
 
