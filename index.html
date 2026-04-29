@@ -390,7 +390,7 @@
         </button>
         <div style="display: flex; justify-content: space-between; width: 100%;">
             <span>Entregas Hoje: <strong id="count-delivered">0</strong></span>
-            <span>Hoje: <strong id="revenue-delivered">R$ 0,00</strong></span>
+            <span>Taxas Hoje: <strong id="revenue-delivered">R$ 0,00</strong></span>
         </div>
         <div style="display: flex; justify-content: space-between; width: 100%; border-top: 1px solid #444; padding-top: 5px; font-size: 12px; color: #aaa;">
             <span>Total Geral: <strong id="total-delivered-count">0</strong></span>
@@ -404,7 +404,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getDatabase, ref, onValue, set, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+    import { getDatabase, ref, onValue, set, update, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyBEQaIIAYGSDRteg_jERuHtfjQRMpaQYmU",
@@ -728,11 +728,12 @@
                     listShipping.innerHTML += createOrderCard(key, o, 'shipping', orderNum);
                 }
                 else if (o.status === 'pago' && o.driverId === currentDriverId) {
-                    myTotalGeneral += 7;
+                    const fee = parseFloat(o.deliveryFee || 0);
+                    myTotalGeneral += fee;
                     myCountGeneral++;
                     
                     if (orderDate === todayStr) {
-                        myTotalToday += 7;
+                        myTotalToday += fee;
                         myCountToday++;
                         const dailyOrders = Object.entries(data).filter(([_, ord]) => getBrazDate(new Date(ord.timestamp)) === orderDate).sort((a, b) => a[1].timestamp - b[1].timestamp);
                         const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
@@ -770,8 +771,14 @@
                             <i class="fa-solid fa-truck-ramp-box"></i> Coleta: ${timePickup} | 
                             <i class="fa-solid fa-check"></i> Entrega: ${timeDelivery}
                         </div>
+                        ${(o.cliente.lat && o.cliente.lng) ? 
+                            `<button onclick="window.open('https://www.google.com/maps/search/?api=1&query=${o.cliente.lat},${o.cliente.lng}')" style="background:#3498db; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; margin-top:5px; cursor:pointer;"><i class="fa-solid fa-location-dot"></i> Ver Local da Entrega</button>` : ''
+                        }
                     </div>
-                    <span style="font-weight: bold; color: var(--success); font-size: 13px;">+ R$ 7,00</span>
+                    <div style="text-align: right;">
+                        <span style="font-weight: bold; color: var(--success); font-size: 13px; display: block;">+ R$ ${(o.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
+                        <small style="font-size: 9px; color: #888; font-weight: 900; text-transform: uppercase; background: #eee; padding: 1px 4px; border-radius: 3px;">${o.zoneName || 'PADRÃO'}</small>
+                    </div>
                 </div>
             </div>
         `;
@@ -881,14 +888,47 @@
         `;
     }
 
-    window.updateStatus = (key, status) => {
+    function isPointInPolygon(point, polygon) {
+        let x = point[0], y = point[1];
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            let xi = polygon[i][0], yi = polygon[i][1];
+            let xj = polygon[j][0], yj = polygon[j][1];
+            let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    async function calculateZoneFee(lat, lng) {
+        const snap = await get(ref(db, 'settings/map_zones'));
+        const zones = snap.val();
+        if (!zones) return { fee: 4.99, name: "Padrão" };
+
+        let detectedZone = { fee: 4.99, name: "Fora de Área / Padrão" };
+
+        for (const zone of Object.values(zones)) {
+            // VERIFICAÇÃO REAL: Se a coordenada da entrega está DENTRO do desenho (polígono) da zona no mapa
+            if (isPointInPolygon([lat, lng], zone.coords)) {
+                detectedZone = { fee: parseFloat(zone.value), name: zone.name };
+                break; 
+            }
+        }
+        return detectedZone;
+    }
+
+    window.updateStatus = async (key, status) => {
         if (status === 'caminho') {
             if (!confirm("Tem certeza que você finalizou a coleta?")) return;
         }
 
         if (status === 'pago') {
-            if (!confirm("Tem certeza que deseja confirmar a entrega e o pagamento deste pedido?")) return;
+            if (!confirm("Confirmar entrega? O valor da taxa será recalculado automaticamente pela zona do mapa.")) return;
         }
+
+        const orderSnap = await get(ref(db, `orders/${key}`));
+        const o = orderSnap.val();
+        if(!o) return;
 
         const orderRef = ref(db, `orders/${key}`);
         const updates = { status: status };
@@ -897,13 +937,24 @@
             updates.pickedUpAt = Date.now();
         } else if (status === 'pago') {
             updates.deliveredAt = Date.now();
+            
+            if (o.cliente && o.cliente.lat && o.cliente.lng) {
+                const zoneData = await calculateZoneFee(o.cliente.lat, o.cliente.lng);
+                const feeDaZona = parseFloat(zoneData.fee);
+                
+                updates.zoneName = zoneData.name;
+                updates.deliveryFee = feeDaZona;
+
+                const subtotalSemTaxa = parseFloat(o.total) - parseFloat(o.deliveryFee || 0);
+                updates.total = subtotalSemTaxa + feeDaZona;
+            }
         }
 
         update(orderRef, updates)
         .then(() => {
             if(status === 'pago') {
                 showCoinEffect();
-                alert("Entrega finalizada com sucesso! Bom trabalho.");
+                alert("Entrega e Pagamento Confirmados!");
             }
         });
     };
