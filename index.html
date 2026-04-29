@@ -430,58 +430,50 @@
         const modal = document.getElementById('modal-permission');
         localStorage.setItem('redline_geo_requested', 'true');
         
-        const updatePos = () => {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (pos) => {
-                        if (modal) modal.style.display = 'none';
-                        const { latitude, longitude } = pos.coords;
-                        const latlng = [latitude, longitude];
-
-                        if (currentDriverId) {
-                            set(ref(db, `drivers/${currentDriverId}/location`), {
-                                lat: latitude,
-                                lng: longitude,
-                                timestamp: Date.now(),
-                                name: currentDriverName
-                            });
-                        }
-
-                        const userIcon = L.divIcon({
-                            html: `<div class="dot-pulse"></div>`,
-                            iconSize: [14, 14],
-                            iconAnchor: [7, 7],
-                            className: ''
-                        });
-
-                        if (generalMap) {
-                            if (!userMarker) {
-                                userMarker = L.marker(latlng, { icon: userIcon, zIndexOffset: 10000 }).addTo(generalMap);
-                                generalMap.setView(latlng, 16);
-                            } else {
-                                userMarker.setLatLng(latlng);
-                            }
-                        }
-                    },
-                    (err) => {
-                        if (modal) modal.style.display = 'none';
-                        console.error("Erro GPS:", err.message);
-                    },
-                    { 
-                        enableHighAccuracy: true, 
-                        timeout: 5000, 
-                        maximumAge: 0 
-                    }
-                );
-            }
-        };
-
         if (navigator.geolocation) {
-            updatePos();
-            if (!window.locationIntervalStarted) {
-                setInterval(updatePos, 5000);
-                window.locationIntervalStarted = true;
-            }
+            if (window.redlineWatchId) navigator.geolocation.clearWatch(window.redlineWatchId);
+            
+            window.redlineWatchId = navigator.geolocation.watchPosition(
+                (pos) => {
+                    if (modal) modal.style.display = 'none';
+                    const { latitude, longitude } = pos.coords;
+                    const latlng = [latitude, longitude];
+
+                    if (currentDriverId) {
+                        update(ref(db, `drivers/${currentDriverId}/location`), {
+                            lat: latitude,
+                            lng: longitude,
+                            timestamp: Date.now(),
+                            name: currentDriverName
+                        });
+                    }
+
+                    const userIcon = L.divIcon({
+                        html: `<div class="dot-pulse"></div>`,
+                        iconSize: [14, 14],
+                        iconAnchor: [7, 7],
+                        className: ''
+                    });
+
+                    if (generalMap) {
+                        if (!userMarker) {
+                            userMarker = L.marker(latlng, { icon: userIcon, zIndexOffset: 10000 }).addTo(generalMap);
+                            generalMap.setView(latlng, 16);
+                        } else {
+                            userMarker.setLatLng(latlng);
+                        }
+                    }
+                },
+                (err) => {
+                    if (modal) modal.style.display = 'none';
+                    console.error("Erro GPS:", err.message);
+                },
+                { 
+                    enableHighAccuracy: true, 
+                    maximumAge: 10000, 
+                    timeout: 10000 
+                }
+            );
         } else {
             if (modal) modal.style.display = 'none';
             alert("Geolocalização não suportada pelo seu navegador.");
