@@ -171,6 +171,43 @@
             100% { transform: scale(2); opacity: 0; }
         }
 
+        .dot-pulse {
+            width: 14px;
+            height: 14px;
+            background-color: #e74c3c;
+            border-radius: 50%;
+            position: relative;
+            border: 2px solid white;
+            box-shadow: 0 0 8px rgba(0,0,0,0.3);
+        }
+
+        .dot-pulse::after {
+            content: '';
+            width: 100%;
+            height: 100%;
+            background-color: #e74c3c;
+            border-radius: 50%;
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            border: 2px solid #e74c3c;
+            animation: pulse-ring 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+        }
+
+        .dot-pulse.offline {
+            background-color: #888;
+        }
+
+        .dot-pulse.offline::after {
+            background-color: #888;
+            border-color: #888;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.33); }
+            80%, 100% { transform: scale(3); opacity: 0; }
+        }
+
         #loading-screen {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -206,7 +243,7 @@
         <p style="font-weight: bold; color: #555; letter-spacing: 1px;">CARREGANDO LOGÍSTICA...</p>
     </div>
 
-    <div id="modal-permission" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 20000; display: flex; align-items: center; justify-content: center; text-align: center;">
+    <div id="modal-permission" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 20000; display: none; align-items: center; justify-content: center; text-align: center;">
         <div style="background: white; width: 85%; max-width: 320px; padding: 30px; border-radius: 25px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
             <div style="width: 70px; height: 70px; background: #fff4ee; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
                 <i class="fa-solid fa-location-crosshairs" style="font-size: 30px; color: var(--primary);"></i>
@@ -216,6 +253,7 @@
                 <p style="font-size: 14px; color: #666; line-height: 1.5;">Para acompanhar sua posição na rota e mostrar sua localização no mapa, precisamos que você autorize o GPS.</p>
             </div>
             <button onclick="requestGeoLocation()" style="background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; font-size: 15px; cursor: pointer;">PERMITIR E CONTINUAR</button>
+            <button onclick="document.getElementById('modal-permission').style.display='none'; localStorage.setItem('redline_geo_requested', 'true');" style="background: none; border: none; color: #888; font-size: 12px; font-weight: bold; cursor: pointer;">AGORA NÃO</button>
         </div>
     </div>
 
@@ -232,13 +270,13 @@
             </div>
         </div>
 
-        <div class="driver-card" onclick="selectDriver('convidado', 'convidado')">
-        <img src="https://cdn-icons-png.flaticon.com/512/149/149071.png">
-        <div style="text-align: left;">
-            <strong style="display: block;">convidado</strong>
-            <span style="font-size: 12px; color: #888;">Entregador RedLine</span>
+        <div class="driver-card" onclick="selectDriver('convidado', 'Convidado')">
+            <img src="https://cdn-icons-png.flaticon.com/512/149/149071.png">
+            <div style="text-align: left;">
+                <strong style="display: block;">Convidado</strong>
+                <span style="font-size: 12px; color: #888;">Entregador RedLine</span>
+            </div>
         </div>
-    </div>
     </div>
 
     <header>
@@ -347,6 +385,9 @@
     </div>
 
     <div class="stats-bar" style="flex-direction: column; height: auto; gap: 8px; padding: 10px 20px;">
+        <button onclick="requestGeoLocation()" style="width: 100%; background: #444; color: #fff; border: none; padding: 8px; border-radius: 8px; font-size: 11px; font-weight: bold; margin-bottom: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="fa-solid fa-location-crosshairs"></i> ATIVAR / SINCRONIZAR MEU GPS
+        </button>
         <div style="display: flex; justify-content: space-between; width: 100%;">
             <span>Entregas Hoje: <strong id="count-delivered">0</strong></span>
             <span>Hoje: <strong id="revenue-delivered">R$ 0,00</strong></span>
@@ -387,6 +428,7 @@
 
     window.requestGeoLocation = () => {
         const modal = document.getElementById('modal-permission');
+        localStorage.setItem('redline_geo_requested', 'true');
         
         const updatePos = () => {
             if (navigator.geolocation) {
@@ -406,9 +448,10 @@
                         }
 
                         const userIcon = L.divIcon({
-                            html: `<div style="background: #000; color: #fff; width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #f46b21; box-shadow: 0 0 15px rgba(244,107,33,0.5);"><i class="fa-solid fa-motorcycle" style="font-size: 18px;"></i></div>`,
-                            iconSize: [35, 35],
-                            iconAnchor: [17, 17]
+                            html: `<div class="dot-pulse"></div>`,
+                            iconSize: [14, 14],
+                            iconAnchor: [7, 7],
+                            className: ''
                         });
 
                         if (generalMap) {
@@ -436,7 +479,7 @@
         if (navigator.geolocation) {
             updatePos();
             if (!window.locationIntervalStarted) {
-                setInterval(updatePos, 2000);
+                setInterval(updatePos, 5000);
                 window.locationIntervalStarted = true;
             }
         } else {
@@ -445,6 +488,8 @@
         }
     };
 
+    let zonesLayerGroup = null;
+
     function initInlineMap() {
         if (!generalMap) {
             generalMap = L.map('main-map-display').setView([-2.5208, -45.0811], 15);
@@ -452,6 +497,41 @@
                 attribution: '© Google'
             }).addTo(generalMap);
             mapMarkersGroup = L.layerGroup().addTo(generalMap);
+            zonesLayerGroup = L.layerGroup().addTo(generalMap);
+
+            onValue(ref(db, 'settings/map_zones'), (snap) => {
+                const data = snap.val();
+                zonesLayerGroup.clearLayers();
+                if (data) {
+                    Object.entries(data).forEach(([key, z]) => {
+                        if (z.coords && z.coords.length > 0) {
+                            L.polygon(z.coords, {
+                                color: z.color || '#f46b21',
+                                fillColor: z.color || '#f46b21',
+                                fillOpacity: 0.1,
+                                weight: 1,
+                                interactive: false
+                            }).addTo(zonesLayerGroup);
+
+                            const bounds = L.polygon(z.coords).getBounds();
+                            const center = bounds.getCenter();
+
+                            L.marker(center, {
+                                interactive: false,
+                                icon: L.divIcon({
+                                    html: `<div style="display:flex; flex-direction:column; align-items:center;">
+                                            <div style="color: ${z.color}; font-weight: 900; font-size: 10px; opacity: 0.8; text-transform: uppercase; white-space: nowrap; text-shadow: 1px 1px 0px #fff;">${z.name}</div>
+                                            <div style="color: #666; font-weight: bold; font-size: 9px; opacity: 0.8; white-space: nowrap; text-shadow: 1px 1px 0px #fff;">R$ ${parseFloat(z.value || 0).toFixed(2)}</div>
+                                           </div>`,
+                                    className: '',
+                                    iconSize: [60, 30],
+                                    iconAnchor: [30, 15]
+                                })
+                            }).addTo(zonesLayerGroup);
+                        }
+                    });
+                }
+            });
         }
         updateMapMarkers();
     }
@@ -464,11 +544,12 @@
         const storePos = [-2.527173554011838, -45.10398087145432];
         const storeIcon = L.divIcon({
             html: `<div style="position:relative; display:flex; flex-direction:column; align-items:center;">
-                    <div style="background: #000; color: #fff; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 900; white-space: nowrap; border: 1px solid #f46b21; margin-bottom: 2px;">REDLINE</div>
-                    <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="width: 35px; height: 35px; border-radius: 50%; border: 2px solid #f46b21; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);">
+                    <div style="background: #000; color: #fff; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 900; white-space: nowrap; margin-bottom: 2px;">REDLINE</div>
+                    <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="width: 40px; height: 40px; border-radius: 8px;">
                    </div>`,
-            iconSize: [40, 50],
-            iconAnchor: [20, 50]
+            iconSize: [40, 60],
+            iconAnchor: [20, 55],
+            className: ''
         });
         L.marker(storePos, { icon: storeIcon, zIndexOffset: 2000 }).addTo(mapMarkersGroup).bindPopup("<b>RedLine Delivery</b><br>Ponto de Partida");
         
@@ -547,6 +628,11 @@
         document.getElementById('login-overlay').style.display = 'flex';
     } else {
         document.getElementById('display-driver-name').innerText = `Entregador: ${currentDriverName}`;
+        if (!localStorage.getItem('redline_geo_requested')) {
+            document.getElementById('modal-permission').style.display = 'flex';
+        } else {
+            requestGeoLocation();
+        }
     }
 
     window.selectDriver = (id, name) => {
@@ -708,11 +794,15 @@
         const collectTag = o.status === 'caminho' ? `<div class="tag-collected">Coletado pronto para entrega</div>` : "";
         const numBadge = `<span style="background:#000; color:#fff; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px; margin-left:5px;">PEDIDO ${orderNum}</span>`;
 
+        const zoneTag = o.zoneName ? `<span style="background:#34495e; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:10px; margin-bottom:5px; display:inline-block;">ZONA: ${o.zoneName.toUpperCase()}</span>` : "";
+
         if (o.status === 'pago' || o.status === 'pago_confirmado' || o.paymentMethod === 'pix') {
             statusBadge = `<span style="background:#28a745; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">PAGO</span>` + numBadge;
         } else {
             statusBadge = `<span style="background:#e74c3c; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">NÃO PAGO</span>` + numBadge;
         }
+
+        statusBadge = collectTag + "<br>" + zoneTag + "<br>" + statusBadge;
 
         statusBadge = collectTag + "<br>" + statusBadge;
 
