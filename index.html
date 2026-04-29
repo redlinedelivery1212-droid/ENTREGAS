@@ -206,6 +206,19 @@
         <p style="font-weight: bold; color: #555; letter-spacing: 1px;">CARREGANDO LOGÍSTICA...</p>
     </div>
 
+    <div id="modal-permission" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 20000; display: flex; align-items: center; justify-content: center; text-align: center;">
+        <div style="background: white; width: 85%; max-width: 320px; padding: 30px; border-radius: 25px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+            <div style="width: 70px; height: 70px; background: #fff4ee; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                <i class="fa-solid fa-location-crosshairs" style="font-size: 30px; color: var(--primary);"></i>
+            </div>
+            <div>
+                <h3 style="margin-bottom: 10px; color: #222;">Ativar Localização?</h3>
+                <p style="font-size: 14px; color: #666; line-height: 1.5;">Para acompanhar sua posição na rota e mostrar sua localização no mapa, precisamos que você autorize o GPS.</p>
+            </div>
+            <button onclick="requestGeoLocation()" style="background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; font-size: 15px; cursor: pointer;">PERMITIR E CONTINUAR</button>
+        </div>
+    </div>
+
     <div id="login-overlay" style="display: none;">
         <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="height: 80px; border-radius: 15px; margin-bottom: 20px;">
         <h2 style="margin-bottom: 10px;">Bem-vindo, Entregador</h2>
@@ -248,8 +261,13 @@
 
     <div id="inline-map-container" style="width: 100%; height: 300px; position: relative; border-bottom: 2px solid #ddd; background: #eee;">
         <div id="main-map-display" style="width: 100%; height: 100%; z-index: 1;"></div>
-        <div style="position: absolute; top: 10px; right: 10px; z-index: 100; background: var(--primary); color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-            <i class="fa-solid fa-motorcycle"></i> <span id="map-order-count">0</span> Entregas no Mapa
+        <div style="position: absolute; top: 10px; right: 10px; z-index: 100; display: flex; flex-direction: column; gap: 5px; align-items: flex-end;">
+            <div style="background: var(--primary); color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                <i class="fa-solid fa-motorcycle"></i> <span id="map-order-count">0</span> Entregas no Mapa
+            </div>
+            <button onclick="requestGeoLocation()" style="background: #fff; color: #333; border: none; padding: 8px 12px; border-radius: 10px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 5px;">
+                <i class="fa-solid fa-rotate"></i> ATUALIZAR
+            </button>
         </div>
     </div>
 
@@ -365,6 +383,67 @@
     
     let generalMap = null;
     let mapMarkersGroup = null;
+    let userMarker = null;
+
+    window.requestGeoLocation = () => {
+        const modal = document.getElementById('modal-permission');
+        
+        const updatePos = () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        if (modal) modal.style.display = 'none';
+                        const { latitude, longitude } = pos.coords;
+                        const latlng = [latitude, longitude];
+
+                        if (currentDriverId) {
+                            set(ref(db, `drivers/${currentDriverId}/location`), {
+                                lat: latitude,
+                                lng: longitude,
+                                timestamp: Date.now(),
+                                name: currentDriverName
+                            });
+                        }
+
+                        const userIcon = L.divIcon({
+                            html: `<div style="background: #000; color: #fff; width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #f46b21; box-shadow: 0 0 15px rgba(244,107,33,0.5);"><i class="fa-solid fa-motorcycle" style="font-size: 18px;"></i></div>`,
+                            iconSize: [35, 35],
+                            iconAnchor: [17, 17]
+                        });
+
+                        if (generalMap) {
+                            if (!userMarker) {
+                                userMarker = L.marker(latlng, { icon: userIcon, zIndexOffset: 10000 }).addTo(generalMap);
+                                generalMap.setView(latlng, 16);
+                            } else {
+                                userMarker.setLatLng(latlng);
+                            }
+                        }
+                    },
+                    (err) => {
+                        if (modal) modal.style.display = 'none';
+                        console.error("Erro GPS:", err.message);
+                    },
+                    { 
+                        enableHighAccuracy: true, 
+                        timeout: 5000, 
+                        maximumAge: 0 
+                    }
+                );
+            }
+        };
+
+        if (navigator.geolocation) {
+            updatePos();
+            if (!window.locationIntervalStarted) {
+                setInterval(updatePos, 2000);
+                window.locationIntervalStarted = true;
+            }
+        } else {
+            if (modal) modal.style.display = 'none';
+            alert("Geolocalização não suportada pelo seu navegador.");
+        }
+    };
 
     function initInlineMap() {
         if (!generalMap) {
