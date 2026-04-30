@@ -368,6 +368,38 @@
         </div>
     </div>
 
+    <!-- MODAL PROBLEMAS ENTREGA -->
+    <div id="modal-problems" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:10000; align-items:center; justify-content:center;">
+        <div style="background:white; width:90%; max-width:350px; padding:20px; border-radius:20px; display:flex; flex-direction:column; gap:10px;">
+            <h3 style="text-align:center; margin-bottom:10px;">Problema na Entrega</h3>
+            <button class="btn" style="background:#eee; color:#333;" onclick="askPinForAction('cancelado')">Pedido Cancelado</button>
+            <button class="btn" style="background:#eee; color:#333;" onclick="askPinForAction('nao_encontrado')">Cliente não encontrado</button>
+            <button class="btn" style="background:var(--success); color:white;" onclick="askPinForAction('confirmar_manual')">Confirmar Entrega (Manual)</button>
+            <button class="btn" style="background:none; color:#888;" onclick="document.getElementById('modal-problems').style.display='none'">Fechar</button>
+        </div>
+    </div>
+
+    <!-- MODAL PIN DE SEGURANÇA -->
+    <div id="modal-pin" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:11000; align-items:center; justify-content:center;">
+        <div style="background:white; width:85%; max-width:300px; padding:30px; border-radius:25px; text-align:center;">
+            <i class="fa-solid fa-shield-halved" style="font-size:40px; color:var(--primary); margin-bottom:15px;"></i>
+            <h3>Código de Segurança</h3>
+            <p style="font-size:12px; color:#666; margin-bottom:20px;">Peça o código ao gerente para autorizar esta ação.</p>
+            <input type="number" id="input-pin" placeholder="0000" style="width:100%; font-size:32px; text-align:center; letter-spacing:10px; padding:10px; border:2px solid #ddd; border-radius:15px; margin-bottom:20px;">
+            <button class="btn btn-primary" style="width:100%;" onclick="validateActionPin()">CONFIRMAR CÓDIGO</button>
+            <button class="btn" style="background:none; color:#888; margin-top:10px;" onclick="document.getElementById('modal-pin').style.display='none'">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- MODAL SELEÇÃO DE ZONA MANUAL -->
+    <div id="modal-manual-zone" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:10500; align-items:center; justify-content:center;">
+        <div style="background:white; width:90%; max-width:350px; padding:20px; border-radius:20px;">
+            <h3 style="text-align:center; margin-bottom:15px;">Selecione a Área da Entrega</h3>
+            <div id="list-manual-zones" style="display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto;"></div>
+            <button class="btn" style="width:100%; margin-top:15px; background:#eee;" onclick="document.getElementById('modal-manual-zone').style.display='none'">Cancelar</button>
+        </div>
+    </div>
+
     <!-- MODAL MAPA GERAL -->
     <div id="modal-general-map" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 5000; display: none; flex-direction: column;">
         <header style="box-shadow: none; border-bottom: 1px solid #eee;">
@@ -826,7 +858,10 @@
 
         const actionButton = type === 'ready' 
             ? `<button class="btn btn-action btn-purple" onclick="updateStatus('${key}', 'caminho'); document.getElementById('drawer-coleta').style.display='none';"><i class="fa-solid fa-hand-holding-hand"></i> Coletar Pedido</button>`
-            : `<button class="btn btn-action btn-success" onclick="updateStatus('${key}', 'pago')"><i class="fa-solid fa-check-double"></i> Confirmar Entrega e Pagamento</button>`;
+            : `
+            <button class="btn btn-action btn-success" onclick="updateStatus('${key}', 'pago')"><i class="fa-solid fa-check-double"></i> Confirmar Entrega e Pagamento</button>
+            <button class="btn btn-action" style="background:#e74c3c; color:white; margin-top:5px;" onclick="openProblemModal('${key}')"><i class="fa-solid fa-triangle-exclamation"></i> Problema com a Entrega</button>
+            `;
 
         return `
             <div class="order-card ${type}">
@@ -901,26 +936,112 @@
     }
 
     async function calculateZoneFee(lat, lng) {
-        try {
-            const snap = await get(ref(db, 'settings/map_zones'));
-            const zones = snap.val();
-            if (!zones) return { fee: 4.99, name: "Padrão" };
+    try {
+        const defaultSnap = await get(ref(db, 'settings/default_delivery_fee'));
+        const defaultVal = defaultSnap.val() !== null ? parseFloat(defaultSnap.val()) : 999.00;
 
-            // Ponto atual para teste (Lat, Lng)
-            const point = [lat, lng];
-            let detectedZone = { fee: 4.99, name: "Fora de Área / Padrão" };
+        const snap = await get(ref(db, 'settings/map_zones'));
+        const zones = snap.val();
+        
+        const point = [lat, lng];
+        let detectedZone = { fee: defaultVal, name: "FORA DE ÁREA (PADRÃO)" };
 
+        if (zones) {
             for (const zone of Object.values(zones)) {
-                // Converte coordenadas do Firebase se necessário e testa o polígono
                 if (zone.coords && isPointInPolygon(point, zone.coords)) {
                     detectedZone = { fee: parseFloat(zone.value), name: zone.name };
                     break;
                 }
             }
-            return detectedZone;
-        } catch (e) {
-            return { fee: 4.99, name: "Erro no Cálculo" };
         }
+        return detectedZone;
+    } catch (e) {
+        return { fee: 999.00, name: "Erro no Cálculo" };
+    }
+}
+
+    let currentProblemKey = null;
+    let pendingAction = null;
+
+    window.openProblemModal = (key) => {
+        currentProblemKey = key;
+        document.getElementById('modal-problems').style.display = 'flex';
+    };
+
+    window.askPinForAction = (action) => {
+        pendingAction = action;
+        document.getElementById('modal-problems').style.display = 'none';
+        document.getElementById('input-pin').value = '';
+        document.getElementById('modal-pin').style.display = 'flex';
+    };
+
+    window.validateActionPin = () => {
+        const enteredPin = document.getElementById('input-pin').value;
+        const correctPin = String(Math.floor(Date.now() / 40000) % 9000 + 1000);
+
+        if (enteredPin === correctPin) {
+            document.getElementById('modal-pin').style.display = 'none';
+            executeProblemAction();
+        } else {
+            alert("Código incorreto ou expirado! Verifique com o gerente.");
+        }
+    };
+
+    async function executeProblemAction() {
+        const key = currentProblemKey;
+        if (pendingAction === 'confirmar_manual') {
+            openManualZoneSelection(key);
+        } else {
+            // "Pedido cancelado" e "Cliente não encontrado" (nada acontece conforme solicitado)
+            alert("Ação registrada. Comunique o suporte.");
+        }
+    }
+
+    async function openManualZoneSelection(key) {
+        const snap = await get(ref(db, 'settings/map_zones'));
+        const zones = snap.val();
+        const container = document.getElementById('list-manual-zones');
+        container.innerHTML = "";
+
+        if (zones) {
+            Object.entries(zones).forEach(([id, z]) => {
+                const btn = document.createElement('button');
+                btn.className = "btn";
+                btn.style.background = z.color || '#eee';
+                btn.style.color = '#fff';
+                btn.style.textShadow = '1px 1px 2px #000';
+                btn.innerHTML = `${z.name} <br> <small>Taxa: R$ ${parseFloat(z.value).toFixed(2)}</small>`;
+                btn.onclick = () => confirmManualDelivery(key, z);
+                container.appendChild(btn);
+            });
+        }
+        document.getElementById('modal-manual-zone').style.display = 'flex';
+    }
+
+    async function confirmManualDelivery(key, zone) {
+        if (!confirm(`Confirmar entrega na zona ${zone.name}?`)) return;
+
+        const orderSnap = await get(ref(db, `orders/${key}`));
+        const o = orderSnap.val();
+        
+        const fixedFee = 4.90;
+        const currentFee = parseFloat(o.deliveryFee || 0);
+        const subtotal = parseFloat(o.total) - currentFee;
+
+        const updates = {
+            status: 'pago',
+            deliveredAt: Date.now(),
+            zoneName: zone.name + " (Manual)",
+            deliveryFee: fixedFee,
+            total: subtotal + fixedFee,
+            manualConfirmation: true
+        };
+
+        update(ref(db, `orders/${key}`), updates).then(() => {
+            document.getElementById('modal-manual-zone').style.display = 'none';
+            showCoinEffect();
+            alert("Entrega confirmada manualmente!");
+        });
     }
 
     window.updateStatus = async (key, status) => {
@@ -961,21 +1082,23 @@
             // O cálculo da zona agora é baseado EXCLUSIVAMENTE na posição do entregador ao clicar em Finalizar
             if (finalLat && finalLng) {
                 const zoneData = await calculateZoneFee(finalLat, finalLng);
-                const feeReal = parseFloat(zoneData.fee);
+                const fixedFee = 4.90;
                 
                 updates.zoneName = zoneData.name;
-                updates.deliveryFee = feeReal;
+                updates.deliveryFee = fixedFee;
 
-                // Recalcula o total do pedido com a taxa correta da zona onde o entregador está
                 const currentFee = parseFloat(o.deliveryFee || 0);
                 const subtotal = parseFloat(o.total) - currentFee;
-                updates.total = subtotal + feeReal;
+                updates.total = subtotal + fixedFee;
                 
-                console.log(`Entrega confirmada em: ${zoneData.name} | Taxa: R$ ${feeReal}`);
+                console.log(`Entrega confirmada em: ${zoneData.name} | Taxa fixa cliente: R$ ${fixedFee}`);
             } else {
-                // Caso o GPS do entregador falhe ou esteja desligado
                 updates.zoneName = "Entregador sem GPS";
-                updates.deliveryFee = parseFloat(o.deliveryFee || 4.99);
+                const fixedFee = 4.90;
+                const currentFee = parseFloat(o.deliveryFee || 0);
+                const subtotal = parseFloat(o.total) - currentFee;
+                updates.deliveryFee = fixedFee;
+                updates.total = subtotal + fixedFee;
             }
         }
 
