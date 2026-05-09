@@ -219,6 +219,44 @@
             justify-content: center;
         }
 
+        #login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #f8f9fa;
+            z-index: 100000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .driver-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 20px;
+            padding: 20px;
+            width: 100%;
+            max-width: 300px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        }
+
+        .driver-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.05);
+        }
+
         .spinner {
             width: 50px;
             height: 50px;
@@ -257,25 +295,39 @@
         </div>
     </div>
 
-    <div id="login-overlay" style="display: none;">
-        <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="height: 80px; border-radius: 15px; margin-bottom: 20px;">
-        <h2 style="margin-bottom: 10px;">Bem-vindo, Entregador</h2>
-        <p style="color: #666; margin-bottom: 30px;">Selecione seu perfil para continuar</p>
+    <div id="login-overlay">
+        <div style="margin-bottom: 40px; text-align: center;">
+            <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="height: 100px; border-radius: 20px; margin-bottom: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1);">
+            <h1 style="font-size: 24px; color: #222; margin-bottom: 8px;">RedLine Logística</h1>
+            <p style="color: #666; font-size: 14px;">Identifique-se para gerenciar suas entregas</p>
+        </div>
         
-        <div class="driver-card" onclick="selectDriver('carlos', 'Carlos')">
-            <img src="https://cdn-icons-png.flaticon.com/512/149/149071.png">
-            <div style="text-align: left;">
-                <strong style="display: block;">Carlos</strong>
-                <span style="font-size: 12px; color: #888;">Entregador RedLine</span>
+        <div id="drivers-login-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            <div class="driver-card" onclick="selectDriver('carlos', document.getElementById('login-name-carlos').innerText)">
+                <div style="background: #fff4ee; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 20px;">
+                    <i class="fa-solid fa-motorcycle"></i>
+                </div>
+                <div style="text-align: left; flex: 1;">
+                    <strong style="display: block; font-size: 16px; color: #333;" id="login-name-carlos">Perfil 1</strong>
+                    <span style="font-size: 12px; color: #888;">Entregador Oficial</span>
+                </div>
+                <i class="fa-solid fa-chevron-right" style="color: #ccc; font-size: 12px;"></i>
+            </div>
+
+            <div class="driver-card" onclick="selectDriver('convidado', document.getElementById('login-name-convidado').innerText)">
+                <div style="background: #f0f0f0; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #555; font-size: 20px;">
+                    <i class="fa-solid fa-user-tag"></i>
+                </div>
+                <div style="text-align: left; flex: 1;">
+                    <strong style="display: block; font-size: 16px; color: #333;" id="login-name-convidado">Perfil 2</strong>
+                    <span style="font-size: 12px; color: #888;">Entregador Convidado</span>
+                </div>
+                <i class="fa-solid fa-chevron-right" style="color: #ccc; font-size: 12px;"></i>
             </div>
         </div>
 
-        <div class="driver-card" onclick="selectDriver('convidado', 'Convidado')">
-            <img src="https://cdn-icons-png.flaticon.com/512/149/149071.png">
-            <div style="text-align: left;">
-                <strong style="display: block;">Convidado</strong>
-                <span style="font-size: 12px; color: #888;">Entregador RedLine</span>
-            </div>
+        <div style="position: absolute; bottom: 30px; font-size: 11px; color: #aaa; font-weight: bold; letter-spacing: 1px;">
+            SISTEMA DE GESTÃO DE ROTA v2.0
         </div>
     </div>
 
@@ -702,6 +754,40 @@
         closeWppModal();
     };
 
+    onValue(ref(db, 'settings/drivers_config'), (snap) => {
+        const configs = snap.val();
+        if (configs) {
+            if (configs.carlos) {
+                const name = configs.carlos.name || "Carlos";
+                document.getElementById('login-name-carlos').innerText = name;
+                if (currentDriverId === 'carlos') {
+                    currentDriverName = name;
+                    localStorage.setItem('redline_driver_name', name);
+                    document.getElementById('display-driver-name').innerText = `Entregador: ${name}`;
+                }
+            }
+            if (configs.convidado) {
+                const name = configs.convidado.name || "Convidado";
+                document.getElementById('login-name-convidado').innerText = name;
+                if (currentDriverId === 'convidado') {
+                    currentDriverName = name;
+                    localStorage.setItem('redline_driver_name', name);
+                    document.getElementById('display-driver-name').innerText = `Entregador: ${name}`;
+                }
+            }
+        }
+    });
+
+    window.selectDriver = async (id, fallbackName) => {
+        const snap = await get(ref(db, `settings/drivers_config/${id}`));
+        const config = snap.val();
+        const finalName = config ? config.name : fallbackName;
+        
+        localStorage.setItem('redline_driver_id', id);
+        localStorage.setItem('redline_driver_name', finalName);
+        location.reload();
+    };
+
     onValue(ref(db, 'orders'), (snap) => {
         const data = snap.val();
         renderOrders(data);
@@ -760,7 +846,7 @@
                     listShipping.innerHTML += createOrderCard(key, o, 'shipping', orderNum);
                 }
                 else if (o.status === 'pago' && o.driverId === currentDriverId) {
-                    const fee = parseFloat(o.deliveryFee || 0);
+                    const fee = parseFloat(o.driverEarning || o.deliveryFee || 0);
                     myTotalGeneral += fee;
                     myCountGeneral++;
                     
@@ -808,7 +894,7 @@
                         }
                     </div>
                     <div style="text-align: right;">
-                        <span style="font-weight: bold; color: var(--success); font-size: 13px; display: block;">+ R$ ${(o.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
+                        <span style="font-weight: bold; color: var(--success); font-size: 13px; display: block;">+ R$ ${(o.driverEarning || o.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
                         <small style="font-size: 9px; color: #888; font-weight: 900; text-transform: uppercase; background: #eee; padding: 1px 4px; border-radius: 3px;">${o.zoneName || 'PADRÃO'}</small>
                     </div>
                 </div>
@@ -1065,7 +1151,6 @@
         } else if (status === 'pago') {
             updates.deliveredAt = Date.now();
 
-            // Localização do entregador no momento exato da entrega
             const driverSnap = await get(ref(db, `drivers/${currentDriverId}/location`));
             const dLoc = driverSnap.val();
             
@@ -1079,26 +1164,20 @@
                 updates.driverLngConfirm = finalLng;
             }
 
-            // O cálculo da zona agora é baseado EXCLUSIVAMENTE na posição do entregador ao clicar em Finalizar
+            const fixedFee = 4.90; 
+            const currentFee = parseFloat(o.deliveryFee || 0);
+            const subtotal = parseFloat(o.total) - currentFee;
+            
+            updates.deliveryFee = fixedFee;
+            updates.total = subtotal + fixedFee;
+
             if (finalLat && finalLng) {
                 const zoneData = await calculateZoneFee(finalLat, finalLng);
-                const fixedFee = 4.90;
-                
                 updates.zoneName = zoneData.name;
-                updates.deliveryFee = fixedFee;
-
-                const currentFee = parseFloat(o.deliveryFee || 0);
-                const subtotal = parseFloat(o.total) - currentFee;
-                updates.total = subtotal + fixedFee;
-                
-                console.log(`Entrega confirmada em: ${zoneData.name} | Taxa fixa cliente: R$ ${fixedFee}`);
+                updates.driverEarning = zoneData.fee; 
             } else {
                 updates.zoneName = "Entregador sem GPS";
-                const fixedFee = 4.90;
-                const currentFee = parseFloat(o.deliveryFee || 0);
-                const subtotal = parseFloat(o.total) - currentFee;
-                updates.deliveryFee = fixedFee;
-                updates.total = subtotal + fixedFee;
+                updates.driverEarning = fixedFee; 
             }
         }
 
