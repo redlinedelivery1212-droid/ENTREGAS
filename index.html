@@ -839,7 +839,7 @@
                     const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
                     listReady.innerHTML += createOrderCard(key, o, 'ready', orderNum);
                 } 
-                else if (o.status === 'caminho' && o.driverId === currentDriverId) {
+                else if ((o.status === 'caminho' || o.status === 'sua_rota') && o.driverId === currentDriverId) {
                     countInRoute++;
                     const dailyOrders = Object.entries(data).filter(([_, ord]) => getBrazDate(new Date(ord.timestamp)) === orderDate).sort((a, b) => a[1].timestamp - b[1].timestamp);
                     const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
@@ -942,12 +942,17 @@
         const hasReward = o.items.some(i => i.isReward);
         const hasFreeShipping = o.deliveryFee === 0;
 
-        const actionButton = type === 'ready' 
-            ? `<button class="btn btn-action btn-purple" onclick="updateStatus('${key}', 'caminho'); document.getElementById('drawer-coleta').style.display='none';"><i class="fa-solid fa-hand-holding-hand"></i> Coletar Pedido</button>`
-            : `
+        let actionButton = "";
+        if (type === 'ready') {
+            actionButton = `<button class="btn btn-action btn-purple" onclick="updateStatus('${key}', 'caminho'); document.getElementById('drawer-coleta').style.display='none';"><i class="fa-solid fa-hand-holding-hand"></i> Coletar Pedido</button>`;
+        } else {
+            const isSpecificRoute = o.status === 'sua_rota';
+            actionButton = `
+            ${!isSpecificRoute ? `<button class="btn btn-action" style="background:#f46b21; color:white; border: 2px solid #fff; box-shadow: 0 4px 10px rgba(244,107,33,0.3);" onclick="updateStatus('${key}', 'sua_rota')"><i class="fa-solid fa-location-arrow"></i> INDO ENTREGAR ESTE AGORA</button>` : ''}
             <button class="btn btn-action btn-success" onclick="updateStatus('${key}', 'pago')"><i class="fa-solid fa-check-double"></i> Confirmar Entrega e Pagamento</button>
             <button class="btn btn-action" style="background:#e74c3c; color:white; margin-top:5px;" onclick="openProblemModal('${key}')"><i class="fa-solid fa-triangle-exclamation"></i> Problema com a Entrega</button>
             `;
+        }
 
         return `
             <div class="order-card ${type}">
