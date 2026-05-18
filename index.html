@@ -452,6 +452,20 @@
         </div>
     </div>
 
+    <!-- MODAL OBSERVAÇÃO PAGAMENTO -->
+    <div id="modal-payment-obs" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:15000; align-items:center; justify-content:center;">
+        <div style="background:white; width:90%; max-width:350px; padding:25px; border-radius:25px; text-align:center;">
+            <div style="background:#fff4ee; width:60px; height:60px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 15px auto; color:var(--primary); font-size:24px;">
+                <i class="fa-solid fa-comment-dollar"></i>
+            </div>
+            <h3 style="margin-bottom:10px;">Observação do Pedido</h3>
+            <p style="font-size:12px; color:#666; margin-bottom:15px;">Ocorreu algo no pagamento? (Ex: Deu nota de 100, pago parcial). Se estiver tudo certo, apenas confirme.</p>
+            <textarea id="input-payment-obs" placeholder="Escreva aqui se necessário..." style="width:100%; height:80px; padding:12px; border:2px solid #eee; border-radius:15px; outline:none; font-family:inherit; resize:none; margin-bottom:20px; font-size:14px;"></textarea>
+            <button class="btn btn-success" style="width:100%;" onclick="confirmPaymentWithObs()">CONFIRMAR TUDO CERTO</button>
+            <button class="btn" style="background:none; color:#888; margin-top:10px;" onclick="document.getElementById('modal-payment-obs').style.display='none'">Voltar</button>
+        </div>
+    </div>
+
     <!-- MODAL MAPA GERAL -->
     <div id="modal-general-map" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 5000; display: none; flex-direction: column;">
         <header style="box-shadow: none; border-bottom: 1px solid #eee;">
@@ -982,6 +996,8 @@
                     </div>
                 </div>
 
+                ${o.driverObs ? `<div style="background: #f3f0ff; color: #6c5ce7; padding: 10px; border-radius: 12px; margin-bottom: 15px; font-size: 13px; border: 1px solid #dcd0ff; font-weight: 500;"><i class="fa-solid fa-circle-info"></i> <strong>RECADO DA GERÊNCIA:</strong> ${o.driverObs}</div>` : ''}
+
                 <div class="address-box">
                     ${(() => {
                         const isCollected = o.status === 'caminho';
@@ -1053,6 +1069,16 @@
 
     let currentProblemKey = null;
     let pendingAction = null;
+    let pendingPaymentKey = null;
+
+    window.confirmPaymentWithObs = () => {
+        const obs = document.getElementById('input-payment-obs').value;
+        const key = pendingPaymentKey;
+        document.getElementById('modal-payment-obs').style.display = 'none';
+        
+        // Prossegue com a finalização normal passando a obs
+        window.finalStepUpdateStatus(key, obs);
+    };
 
     window.openProblemModal = (key) => {
         currentProblemKey = key;
@@ -1140,59 +1166,93 @@
             if (!confirm("Tem certeza que você finalizou a coleta?")) return;
         }
 
-        if (status === 'pago') {
-            if (!confirm("Confirmar entrega? O valor da taxa será recalculado automaticamente pela zona do mapa.")) return;
-        }
-
         const orderSnap = await get(ref(db, `orders/${key}`));
         const o = orderSnap.val();
         if(!o) return;
 
-        const orderRef = ref(db, `orders/${key}`);
-        const updates = { status: status };
+        if (status === 'pago') {
+            if (o.paymentMethod !== 'pix') {
+                pendingPaymentKey = key;
+                document.getElementById('input-payment-obs').value = '';
+                document.getElementById('modal-payment-obs').style.display = 'flex';
+                return; // Para aqui e espera o modal
+            }
+            if (!confirm("Confirmar entrega? O valor da taxa será recalculado automaticamente pela zona do mapa.")) return;
+        }
+
+        window.finalStepUpdateStatus(key);
+    };
+
+    window.finalStepUpdateStatus = async (key, paymentObs = null) => {
+        const orderSnap = await get(ref(db, `orders/${key}`));
+        const o = orderSnap.val();
         
-        if (status === 'caminho') {
-            updates.pickedUpAt = Date.now();
-        } else if (status === 'pago') {
-            updates.deliveredAt = Date.now();
+        const orderRef = ref(db, `orders/${key}`);
+        const updates = { status: 'pago', deliveredAt: Date.now() };
+        
+        if (paymentObs && paymentObs.trim() !== "") {
+            updates.paymentObs = paymentObs;
+        }
 
-            const driverSnap = await get(ref(db, `drivers/${currentDriverId}/location`));
-            const dLoc = driverSnap.val();
-            
-            let finalLat = null;
-            let finalLng = null;
+        const driverSnap = await get(ref(db, `drivers/${currentDriverId}/location`));
+        const dLoc = driverSnap.val();
+        
+        let finalLat = null;
+        let finalLng = null;
 
-            if (dLoc && dLoc.lat && dLoc.lng) {
-                finalLat = dLoc.lat;
-                finalLng = dLoc.lng;
-                updates.driverLatConfirm = finalLat;
-                updates.driverLngConfirm = finalLng;
-            }
+        if (dLoc && dLoc.lat && dLoc.lng) {
+            finalLat = dLoc.lat;
+            finalLng = dLoc.lng;
+            updates.driverLatConfirm = finalLat;
+            updates.driverLngConfirm = finalLng;
+        }
 
-            const fixedFee = 4.90; 
-            const currentFee = parseFloat(o.deliveryFee || 0);
-            const subtotal = parseFloat(o.total) - currentFee;
-            
-            updates.deliveryFee = fixedFee;
-            updates.total = subtotal + fixedFee;
+        const fixedFee = 4.90; 
+        const currentFee = parseFloat(o.deliveryFee || 0);
+        const subtotal = parseFloat(o.total) - currentFee;
+        
+        updates.deliveryFee = fixedFee;
+        updates.total = subtotal + fixedFee;
 
-            if (finalLat && finalLng) {
-                const zoneData = await calculateZoneFee(finalLat, finalLng);
-                updates.zoneName = zoneData.name;
-                updates.driverEarning = zoneData.fee; 
-            } else {
-                updates.zoneName = "Entregador sem GPS";
-                updates.driverEarning = fixedFee; 
-            }
+        if (finalLat && finalLng) {
+            const zoneData = await calculateZoneFee(finalLat, finalLng);
+            updates.zoneName = zoneData.name;
+            updates.driverEarning = zoneData.fee; 
+        } else {
+            updates.zoneName = "Entregador sem GPS";
+            updates.driverEarning = fixedFee; 
         }
 
         update(orderRef, updates)
         .then(() => {
-            if(status === 'pago') {
-                showCoinEffect();
-                alert("Entrega e Pagamento Confirmados!");
-            }
+            showCoinEffect();
+            alert("Entrega e Pagamento Confirmados!");
         });
+    };
+
+    // Ajuste apenas para o status 'caminho' que ficou fora da lógica acima
+    const originalUpdateStatus = window.updateStatus;
+    window.updateStatus = async (key, status) => {
+        if (status === 'caminho') {
+            if (!confirm("Tem certeza que você finalizou a coleta?")) return;
+            update(ref(db, `orders/${key}`), { status: 'caminho', pickedUpAt: Date.now() });
+            return;
+        }
+        
+        const orderSnap = await get(ref(db, `orders/${key}`));
+        const o = orderSnap.val();
+        if(!o) return;
+
+        if (status === 'pago') {
+            if (o.paymentMethod !== 'pix') {
+                pendingPaymentKey = key;
+                document.getElementById('input-payment-obs').value = '';
+                document.getElementById('modal-payment-obs').style.display = 'flex';
+                return;
+            }
+            if (!confirm("Confirmar entrega?")) return;
+        }
+        window.finalStepUpdateStatus(key);
     };
 
     function showCoinEffect() {
