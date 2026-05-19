@@ -461,6 +461,49 @@
             <h3 style="margin-bottom:10px;">Observação do Pedido</h3>
             <p style="font-size:12px; color:#666; margin-bottom:15px;">Ocorreu algo no pagamento? (Ex: Deu nota de 100, pago parcial). Se estiver tudo certo, apenas confirme.</p>
             <textarea id="input-payment-obs" placeholder="Escreva aqui se necessário..." style="width:100%; height:80px; padding:12px; border:2px solid #eee; border-radius:15px; outline:none; font-family:inherit; resize:none; margin-bottom:20px; font-size:14px;"></textarea>
+            
+            <div id="troco-pix-section" style="margin-bottom: 20px; padding: 15px; background: #f0f7ff; border-radius: 15px; border: 1px solid #3498db; display: none;">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: bold; color: #2980b9; cursor: pointer; font-size: 14px;">
+                        <input type="checkbox" id="check-troco-pix" style="width: 22px; height: 22px;" onchange="handleTrocoToggle('pix')"> 
+                        <span>VOLTAR TROCO NO PIX?</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: bold; color: #6c5ce7; cursor: pointer; font-size: 14px;">
+                        <input type="checkbox" id="check-troco-wallet" style="width: 22px; height: 22px;" onchange="handleTrocoToggle('wallet')"> 
+                        <span>VOLTAR VALOR P/ CARTEIRA?</span>
+                    </label>
+                </div>
+
+                <div id="div-valor-troco" style="display: none; margin-top: 15px; border-top: 1px dashed #3498db; padding-top: 15px;">
+                    <p id="texto-tipo-troco" style="font-size: 11px; color: #666; margin-bottom: 8px; font-weight: bold; text-transform: uppercase;">DIGITE O VALOR DO REEMBOLSO:</p>
+                    <input type="number" id="input-valor-troco" placeholder="0.00" step="0.01" style="width: 100%; padding: 12px; border: 2px solid #3498db; border-radius: 10px; text-align: center; font-size: 22px; font-weight: 900; color: #2980b9;">
+                </div>
+            </div>
+
+            <script>
+                window.handleTrocoToggle = (type) => {
+                    const pix = document.getElementById('check-troco-pix');
+                    const wallet = document.getElementById('check-troco-wallet');
+                    const divInput = document.getElementById('div-valor-troco');
+                    const label = document.getElementById('texto-tipo-troco');
+
+                    if (type === 'pix') {
+                        if (pix.checked) wallet.checked = false;
+                    } else {
+                        if (wallet.checked) pix.checked = false;
+                    }
+
+                    if (pix.checked || wallet.checked) {
+                        divInput.style.display = 'block';
+                        label.innerText = pix.checked ? "VALOR P/ GERÊNCIA ENVIAR NO PIX:" : "VALOR P/ ADICIONAR NA CARTEIRA DO CLIENTE:";
+                        divInput.style.borderColor = pix.checked ? "#3498db" : "#6c5ce7";
+                        document.getElementById('input-valor-troco').style.color = pix.checked ? "#2980b9" : "#6c5ce7";
+                    } else {
+                        divInput.style.display = 'none';
+                    }
+                };
+            </script>
+
             <button class="btn btn-success" style="width:100%;" onclick="confirmPaymentWithObs()">CONFIRMAR TUDO CERTO</button>
             <button class="btn" style="background:none; color:#888; margin-top:10px;" onclick="document.getElementById('modal-payment-obs').style.display='none'">Voltar</button>
         </div>
@@ -893,9 +936,15 @@
         const timeOptions = { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' };
         const timeDelivery = o.deliveredAt ? new Date(o.deliveredAt).toLocaleTimeString('pt-BR', timeOptions) : '--:--';
         const timePickup = o.pickedUpAt ? new Date(o.pickedUpAt).toLocaleTimeString('pt-BR', timeOptions) : '--:--';
+        const walletRefundHtml = o.trocoWalletValue ? `<div style="color: #6c5ce7; font-weight: 900; font-size: 10px; margin-top: 5px;"><i class="fa-solid fa-wallet"></i> TROCO CARTEIRA: R$ ${parseFloat(o.trocoWalletValue).toFixed(2)}</div>` : "";
         
         return `
             <div class="order-card" style="opacity: 0.8; border-left: 5px solid #28a745; padding: 10px 15px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="font-size: 13px;">PEDIDO ${orderNum} - ${o.cliente.nome}</strong>
+                        ${walletRefundHtml}
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <strong style="font-size: 13px;">PEDIDO ${orderNum} - ${o.cliente.nome}</strong>
@@ -926,8 +975,10 @@
         const numBadge = `<span style="background:#000; color:#fff; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px; margin-left:5px;">PEDIDO ${orderNum}</span>`;
 
         const zoneTag = o.zoneName ? `<span style="background:#34495e; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:10px; margin-bottom:5px; display:inline-block;">ZONA: ${o.zoneName.toUpperCase()}</span>` : "";
+        const walletRefundTag = o.trocoWalletValue ? `<div style="background: #6c5ce7; color: white; padding: 4px 8px; border-radius: 5px; font-weight: 900; font-size: 11px; display: inline-block; margin-bottom: 5px; border: 1px solid #fff;">TROCO P/ CARTEIRA: R$ ${parseFloat(o.trocoWalletValue).toFixed(2)}</div>` : "";
 
         if (o.status === 'pago' || o.status === 'pago_confirmado' || o.paymentMethod === 'pix') {
+            statusBadge = walletRefundTag + `<br>` + `<span style="background:#28a745; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">PAGO</span>` + numBadge;
             statusBadge = `<span style="background:#28a745; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">PAGO</span>` + numBadge;
         } else {
             statusBadge = `<span style="background:#e74c3c; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px;">NÃO PAGO</span>` + numBadge;
@@ -1073,11 +1124,19 @@
 
     window.confirmPaymentWithObs = () => {
         const obs = document.getElementById('input-payment-obs').value;
+        const pixAtivo = document.getElementById('check-troco-pix').checked;
+        const walletAtivo = document.getElementById('check-troco-wallet').checked;
+        const trocoValor = document.getElementById('input-valor-troco').value;
         const key = pendingPaymentKey;
+        
         document.getElementById('modal-payment-obs').style.display = 'none';
         
-        // Prossegue com a finalização normal passando a obs
-        window.finalStepUpdateStatus(key, obs);
+        const trocoData = {
+            valor: (pixAtivo || walletAtivo) ? trocoValor : null,
+            tipo: pixAtivo ? 'pix' : (walletAtivo ? 'wallet' : null)
+        };
+
+        window.finalStepUpdateStatus(key, obs, trocoData);
     };
 
     window.openProblemModal = (key) => {
@@ -1183,7 +1242,7 @@
         window.finalStepUpdateStatus(key);
     };
 
-    window.finalStepUpdateStatus = async (key, paymentObs = null) => {
+    window.finalStepUpdateStatus = async (key, paymentObs = null, trocoData = null) => {
         const orderSnap = await get(ref(db, `orders/${key}`));
         const o = orderSnap.val();
         
@@ -1192,6 +1251,24 @@
         
         if (paymentObs && paymentObs.trim() !== "") {
             updates.paymentObs = paymentObs;
+        }
+
+        if (trocoData && trocoData.valor) {
+            const valorTroco = parseFloat(trocoData.valor);
+            if (trocoData.tipo === 'pix') {
+                updates.trocoPixValue = valorTroco;
+                updates.trocoPixStatus = 'pendente';
+            } else if (trocoData.tipo === 'wallet') {
+                updates.trocoWalletValue = valorTroco;
+                updates.trocoWalletStatus = 'enviado'; // Já processado no banco
+                
+                // Lógica para enviar o saldo REAL para a carteira do cliente
+                const uKey = o.cliente.contato.replace(/\D/g, '');
+                const userBalRef = ref(db, `users/${uKey}/walletBalance`);
+                const currentBalSnap = await get(userBalRef);
+                const currentBal = currentBalSnap.val() || 0;
+                await set(userBalRef, currentBal + valorTroco);
+            }
         }
 
         const driverSnap = await get(ref(db, `drivers/${currentDriverId}/location`));
@@ -1247,6 +1324,17 @@
             if (o.paymentMethod !== 'pix') {
                 pendingPaymentKey = key;
                 document.getElementById('input-payment-obs').value = '';
+                document.getElementById('check-troco-pix').checked = false;
+                document.getElementById('check-troco-wallet').checked = false;
+                document.getElementById('input-valor-troco').value = '';
+                document.getElementById('div-valor-troco').style.display = 'none';
+                
+                if (o.paymentMethod === 'especie') {
+                    document.getElementById('troco-pix-section').style.display = 'block';
+                } else {
+                    document.getElementById('troco-pix-section').style.display = 'none';
+                }
+                
                 document.getElementById('modal-payment-obs').style.display = 'flex';
                 return;
             }
