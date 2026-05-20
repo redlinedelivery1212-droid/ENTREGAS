@@ -58,6 +58,7 @@
 
         .order-card.ready { border-left-color: var(--success); }
         .order-card.shipping { border-left-color: #6c5ce7; border: 3px solid #6c5ce7; }
+        .order-card.on-route { border-left-color: #f46b21; border: 3px solid #f46b21; background: #fff9f5; }
         .tag-collected { background: #6c5ce7; color: white; padding: 4px 8px; border-radius: 5px; font-weight: bold; font-size: 11px; display: inline-block; margin-bottom: 5px; text-transform: uppercase; }
         .btn-purple { background: #6c5ce7 !important; color: white !important; }
         .drawer-overlay { position: fixed; top: 0; right: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: none; justify-content: flex-end; }
@@ -192,6 +193,26 @@
             left: -2px;
             border: 2px solid #e74c3c;
             animation: pulse-ring 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+        }
+
+        #eta-badge-driver {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 8px 18px;
+            border-radius: 50px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            border: 2px solid var(--primary);
+            font-weight: 900;
+            font-size: 12px;
+            color: #333;
+            white-space: nowrap;
         }
 
         .dot-pulse.offline {
@@ -351,12 +372,19 @@
 
     <div id="inline-map-container" style="width: 100%; height: 300px; position: relative; border-bottom: 2px solid #ddd; background: #eee;">
         <div id="main-map-display" style="width: 100%; height: 100%; z-index: 1;"></div>
+        <div id="eta-badge-driver">
+            <i class="fa-solid fa-motorcycle" style="color: var(--primary);"></i>
+            <span id="eta-text-driver">Calculando rota...</span>
+        </div>
         <div style="position: absolute; top: 10px; right: 10px; z-index: 100; display: flex; flex-direction: column; gap: 5px; align-items: flex-end;">
             <div style="background: var(--primary); color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
                 <i class="fa-solid fa-motorcycle"></i> <span id="map-order-count">0</span> Entregas no Mapa
             </div>
             <button onclick="requestGeoLocation()" style="background: #fff; color: #333; border: none; padding: 8px 12px; border-radius: 10px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 5px;">
                 <i class="fa-solid fa-rotate"></i> ATUALIZAR
+            </button>
+            <button id="btn-nav-mode" onclick="toggleNavigationMode()" style="background: #222; color: #fff; border: none; padding: 8px 12px; border-radius: 10px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 5px;">
+                <i class="fa-solid fa-compass"></i> MODO ROTA: OFF
             </button>
         </div>
     </div>
@@ -566,6 +594,30 @@
     let generalMap = null;
     let mapMarkersGroup = null;
     let userMarker = null;
+    let activeRouteLine = null;
+    let currentDriverPos = null;
+    let isNavMode = false;
+    let driverHeading = 0;
+
+    window.toggleNavigationMode = () => {
+        isNavMode = !isNavMode;
+        const btn = document.getElementById('btn-nav-mode');
+        const mapEl = document.getElementById('main-map-display');
+        
+        if (isNavMode) {
+            btn.style.background = 'var(--success)';
+            btn.innerHTML = `<i class="fa-solid fa-compass"></i> MODO ROTA: ON`;
+            mapEl.style.transform = "perspective(600px) rotateX(25deg)";
+            mapEl.style.transition = "0.5s";
+            zonesLayerGroup.clearLayers();
+        } else {
+            btn.style.background = '#222';
+            btn.innerHTML = `<i class="fa-solid fa-compass"></i> MODO ROTA: OFF`;
+            mapEl.style.transform = "none";
+            location.reload();
+        }
+        updateMapMarkers();
+    };
 
     window.requestGeoLocation = () => {
         const modal = document.getElementById('modal-permission');
@@ -577,8 +629,10 @@
             window.redlineWatchId = navigator.geolocation.watchPosition(
                 (pos) => {
                     if (modal) modal.style.display = 'none';
-                    const { latitude, longitude } = pos.coords;
+                    const { latitude, longitude, heading } = pos.coords;
                     const latlng = [latitude, longitude];
+                    currentDriverPos = latlng;
+                    if (heading !== null) driverHeading = heading;
 
                     if (currentDriverId) {
                         update(ref(db, `drivers/${currentDriverId}/location`), {
@@ -590,19 +644,29 @@
                     }
 
                     const userIcon = L.divIcon({
-                        html: `<div class="dot-pulse"></div>`,
-                        iconSize: [14, 14],
-                        iconAnchor: [7, 7],
+                        html: isNavMode ? 
+                            `<div style="transform: rotate(${driverHeading - 45}deg); transition: 0.2s;">
+                                <i class="fa-solid fa-location-arrow" style="color: #3498db; font-size: 24px; text-shadow: 0 0 5px white;"></i>
+                             </div>` : 
+                            `<div class="dot-pulse"></div>`,
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12],
                         className: ''
                     });
 
                     if (generalMap) {
                         if (!userMarker) {
                             userMarker = L.marker(latlng, { icon: userIcon, zIndexOffset: 10000 }).addTo(generalMap);
-                            generalMap.setView(latlng, 16);
                         } else {
                             userMarker.setLatLng(latlng);
+                            userMarker.setIcon(userIcon);
                         }
+                        
+                        if (isNavMode && isNavigating) {
+                            generalMap.setView(latlng, 18);
+                        }
+
+                        if (window.isNavigating) updateMapMarkers();
                     }
                 },
                 (err) => {
@@ -635,7 +699,7 @@
             onValue(ref(db, 'settings/map_zones'), (snap) => {
                 const data = snap.val();
                 zonesLayerGroup.clearLayers();
-                if (data) {
+                if (data && !isNavMode) {
                     Object.entries(data).forEach(([key, z]) => {
                         if (z.coords && z.coords.length > 0) {
                             L.polygon(z.coords, {
@@ -672,84 +736,101 @@
     function updateMapMarkers() {
         if (!mapMarkersGroup) return;
         mapMarkersGroup.clearLayers();
+        if (activeRouteLine) {
+            activeRouteLine.remove();
+            activeRouteLine = null;
+        }
+        document.getElementById('eta-badge-driver').style.display = 'none';
+        window.isNavigating = false;
 
-        // Adiciona Marcador Fixo da Loja RedLine
-        const storePos = [-2.527173554011838, -45.10398087145432];
-        const storeIcon = L.divIcon({
-            html: `<div style="position:relative; display:flex; flex-direction:column; align-items:center;">
-                    <div style="background: #000; color: #fff; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 900; white-space: nowrap; margin-bottom: 2px;">REDLINE</div>
-                    <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="width: 40px; height: 40px; border-radius: 8px;">
-                   </div>`,
-            iconSize: [40, 60],
-            iconAnchor: [20, 55],
-            className: ''
-        });
-        L.marker(storePos, { icon: storeIcon, zIndexOffset: 2000 }).addTo(mapMarkersGroup).bindPopup("<b>RedLine Delivery</b><br>Ponto de Partida");
-        
         onValue(ref(db, 'orders'), (snap) => {
             const data = snap.val();
             let count = 0;
             const bounds = [];
+            
+            const storePos = [-2.527173554011838, -45.10398087145432];
+            const storeIcon = L.divIcon({
+                html: `<div style="position:relative; display:flex; flex-direction:column; align-items:center;">
+                        <div style="background: #000; color: #fff; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 900; white-space: nowrap; margin-bottom: 2px;">REDLINE</div>
+                        <img src="https://shscuqqqezibwkibhyix.supabase.co/storage/v1/object/public/ecs/WhatsApp%20Image%202026-03-14%20at%2011.19.51%20PM%20(1).jpeg" style="width: 40px; height: 40px; border-radius: 8px;">
+                       </div>`,
+                iconSize: [40, 60],
+                iconAnchor: [20, 55],
+                className: ''
+            });
 
             if (data) {
                 const entries = Object.entries(data);
-                entries.forEach(([key, o]) => {
-                    if (o.driverId === currentDriverId && (o.status === 'preparando' || o.status === 'caminho')) {
-                        const c = o.cliente || {};
-                        if (c.lat && c.lng) {
-                            count++;
-                            const orderPos = [c.lat, c.lng];
-                            bounds.push(orderPos);
+                const navigatingOrder = entries.find(([k, o]) => o.driverId === currentDriverId && o.status === 'sua_rota');
 
-                            const minPassados = Math.floor((Date.now() - o.timestamp) / 60000);
-                            const isCollected = o.status === 'caminho';
-                            
-                            let statusColor = "#aaa"; // Cinza padrão se não coletado
-                            let iconColor = "#888";
-                            let opacity = "0.5";
+                if (navigatingOrder) {
+                    window.isNavigating = true;
+                    const [key, o] = navigatingOrder;
+                    const c = o.cliente || {};
+                    if (c.lat && c.lng) {
+                        const orderPos = [c.lat, c.lng];
+                        
+                        const customerIcon = L.divIcon({
+                            html: `<i class="fa-solid fa-house-user" style="color: #333; font-size: 30px; text-shadow: 0 0 10px white;"></i>`,
+                            iconSize: [30, 30], iconAnchor: [15, 15], className: ''
+                        });
+                        L.marker(orderPos, { icon: customerIcon }).addTo(mapMarkersGroup);
 
-                            if (isCollected) {
-                                opacity = "1";
-                                iconColor = "#3498db";
-                                statusColor = "#28a745"; 
-                                if (minPassados >= 60) statusColor = "#e74c3c"; 
-                                else if (minPassados >= 40) statusColor = "#f46b21"; 
-                                else if (minPassados >= 20) statusColor = "#f1c40f";
-                            }
-
-                            const customIcon = L.divIcon({
-                                html: `<div style="position:relative; display:flex; flex-direction:column; align-items:center; opacity: ${opacity};">
-                                        <div style="background: ${statusColor}; color: ${isCollected && minPassados >= 20 && minPassados < 40 ? 'black' : 'white'}; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 800; white-space: nowrap; border: 1px solid white; margin-bottom: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-                                            ${c.nome.split(' ')[0].toUpperCase()} | <span class="map-cronometro" data-timestamp="${o.timestamp}">00:00</span>
-                                        </div>
-                                        <i class="fa-solid fa-location-pin" style="color: ${iconColor}; font-size: 32px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);"></i>
-                                       </div>`,
-                                iconSize: [100, 50],
-                                iconAnchor: [50, 48],
-                                className: 'custom-driver-marker'
-                            });
-
-                            const marker = L.marker(orderPos, { icon: customIcon }).addTo(mapMarkersGroup);
-                            
-                            const itemsStr = o.items.map(i => `${i.qty}x ${i.name}`).join('<br>');
-                            marker.bindPopup(`
-                                <div style="font-family: sans-serif; min-width: 150px;">
-                                    <strong style="font-size: 14px; color: var(--primary);">${c.nome}</strong><br>
-                                    <span style="font-size: 11px; color: #666;">${c.rua}, ${c.numero}</span><hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
-                                    <div style="font-size: 12px; margin-bottom: 8px;">${itemsStr}</div>
-                                    <a href="https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}" target="_blank" style="display: block; text-align: center; background: #3498db; color: white; text-decoration: none; padding: 5px; border-radius: 5px; font-weight: bold; font-size: 11px;">ABRIR GPS</a>
-                                </div>
-                            `);
+                        if (currentDriverPos) {
+                            fetch(`https://router.project-osrm.org/route/v1/driving/${currentDriverPos[1]},${currentDriverPos[0]};${c.lng},${c.lat}?overview=full&geometries=geojson`)
+                                .then(r => r.json())
+                                .then(routeData => {
+                                    if (routeData.routes && routeData.routes[0]) {
+                                        const coords = routeData.routes[0].geometry.coordinates.map(pt => [pt[1], pt[0]]);
+                                        activeRouteLine = L.polyline(coords, { color: '#ea1d2c', weight: 6, opacity: 0.8, lineJoin: 'round' }).addTo(mapMarkersGroup);
+                                        
+                                        const durationSeconds = routeData.routes[0].duration;
+                                        const minTime = Math.round(durationSeconds / 60) + 1;
+                                        const maxTime = minTime + 3;
+                                        
+                                        document.getElementById('eta-badge-driver').style.display = 'flex';
+                                        document.getElementById('eta-text-driver').innerText = `CHEGADA EM: ${minTime} - ${maxTime} MIN`;
+                                        
+                                        generalMap.fitBounds(L.latLngBounds([currentDriverPos, orderPos]), { padding: [50, 50] });
+                                    }
+                                });
+                        } else {
+                            generalMap.setView(orderPos, 16);
                         }
                     }
-                });
-            }
+                } else {
+                    L.marker(storePos, { icon: storeIcon, zIndexOffset: 2000 }).addTo(mapMarkersGroup).bindPopup("<b>RedLine Delivery</b>");
+                    
+                    entries.forEach(([key, o]) => {
+                        if (o.driverId === currentDriverId && (o.status === 'preparando' || o.status === 'caminho')) {
+                            const c = o.cliente || {};
+                            if (c.lat && c.lng) {
+                                count++;
+                                const orderPos = [c.lat, c.lng];
+                                bounds.push(orderPos);
 
-            document.getElementById('map-order-count').innerText = count;
-            if (bounds.length > 0) {
-                generalMap.fitBounds(bounds, { padding: [60, 60] });
+                                const minPassados = Math.floor((Date.now() - o.timestamp) / 60000);
+                                const isCollected = o.status === 'caminho';
+                                let statusColor = isCollected ? (minPassados >= 60 ? "#e74c3c" : minPassados >= 40 ? "#f46b21" : minPassados >= 20 ? "#f1c40f" : "#28a745") : "#aaa";
+
+                                const customIcon = L.divIcon({
+                                    html: `<div style="position:relative; display:flex; flex-direction:column; align-items:center; opacity: ${isCollected ? '1' : '0.6'};">
+                                            <div style="background: ${statusColor}; color: white; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 800; white-space: nowrap; border: 1px solid white; margin-bottom: 2px;">
+                                                ${c.nome.split(' ')[0].toUpperCase()}
+                                            </div>
+                                            <i class="fa-solid fa-location-pin" style="color: ${isCollected ? '#3498db' : '#888'}; font-size: 32px;"></i>
+                                           </div>`,
+                                    iconSize: [100, 50], iconAnchor: [50, 48], className: ''
+                                });
+                                L.marker(orderPos, { icon: customIcon }).addTo(mapMarkersGroup);
+                            }
+                        }
+                    });
+                    if (bounds.length > 0) generalMap.fitBounds(bounds, { padding: [60, 60] });
+                }
+                document.getElementById('map-order-count').innerText = count;
             }
-        });
+        }, { onlyOnce: true });
     }
 
     window.closeGeneralMap = function() {
@@ -971,7 +1052,7 @@
         let paymentBadge = "";
         let statusBadge = "";
         
-        const collectTag = o.status === 'caminho' ? `<div class="tag-collected">Coletado pronto para entrega</div>` : "";
+        const collectTag = (o.status === 'caminho' || o.status === 'sua_rota') ? `<div class="tag-collected" style="${o.status === 'sua_rota' ? 'background:#f46b21;' : ''}">${o.status === 'sua_rota' ? 'ENTREGANDO ESTE AGORA' : 'Coletado pronto para entrega'}</div>` : "";
         const numBadge = `<span style="background:#000; color:#fff; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:12px; margin-left:5px;">PEDIDO ${orderNum}</span>`;
 
         const zoneTag = o.zoneName ? `<span style="background:#34495e; color:white; padding:4px 8px; border-radius:5px; font-weight:bold; font-size:10px; margin-bottom:5px; display:inline-block;">ZONA: ${o.zoneName.toUpperCase()}</span>` : "";
@@ -1020,7 +1101,7 @@
         }
 
         return `
-            <div class="order-card ${type}">
+            <div class="order-card ${type} ${o.status === 'sua_rota' ? 'on-route' : ''}">
                 <div class="order-header">
                     <div style="display:flex; flex-direction:column; gap:5px;">
                         ${statusBadge}
@@ -1051,7 +1132,7 @@
 
                 <div class="address-box">
                     ${(() => {
-                        const isCollected = o.status === 'caminho';
+                        const isCollected = o.status === 'caminho' || o.status === 'sua_rota';
                         const hasLoc = c.lat && c.lng;
                         const style = isCollected 
                             ? (hasLoc ? 'background:#d4edda; color:#155724; border-color:#c3e6cb;' : 'background:#f8d7da; color:#721c24; border-color:#f5c6cb;')
@@ -1223,8 +1304,16 @@
     window.updateStatus = async (key, status) => {
         if (status === 'caminho') {
             if (!confirm("Tem certeza que você finalizou a coleta?")) return;
+            update(ref(db, `orders/${key}`), { status: 'caminho', pickedUpAt: Date.now() });
+            return;
         }
 
+        if (status === 'sua_rota') {
+            update(ref(db, `orders/${key}`), { status: 'sua_rota' });
+            if (!isNavMode) toggleNavigationMode();
+            return;
+        }
+        
         const orderSnap = await get(ref(db, `orders/${key}`));
         const o = orderSnap.val();
         if(!o) return;
@@ -1233,13 +1322,23 @@
             if (o.paymentMethod !== 'pix') {
                 pendingPaymentKey = key;
                 document.getElementById('input-payment-obs').value = '';
+                document.getElementById('check-troco-pix').checked = false;
+                document.getElementById('check-troco-wallet').checked = false;
+                document.getElementById('input-valor-troco').value = '';
+                document.getElementById('div-valor-troco').style.display = 'none';
+                
+                if (o.paymentMethod === 'especie') {
+                    document.getElementById('troco-pix-section').style.display = 'block';
+                } else {
+                    document.getElementById('troco-pix-section').style.display = 'none';
+                }
+                
                 document.getElementById('modal-payment-obs').style.display = 'flex';
-                return; // Para aqui e espera o modal
+                return;
             }
-            if (!confirm("Confirmar entrega? O valor da taxa será recalculado automaticamente pela zona do mapa.")) return;
+            if (!confirm("Confirmar entrega?")) return;
+            window.finalStepUpdateStatus(key);
         }
-
-        window.finalStepUpdateStatus(key);
     };
 
     window.finalStepUpdateStatus = async (key, paymentObs = null, trocoData = null) => {
@@ -1260,9 +1359,8 @@
                 updates.trocoPixStatus = 'pendente';
             } else if (trocoData.tipo === 'wallet') {
                 updates.trocoWalletValue = valorTroco;
-                updates.trocoWalletStatus = 'enviado'; // Já processado no banco
+                updates.trocoWalletStatus = 'enviado';
                 
-                // Lógica para enviar o saldo REAL para a carteira do cliente
                 const uKey = o.cliente.contato.replace(/\D/g, '');
                 const userBalRef = ref(db, `users/${uKey}/walletBalance`);
                 const currentBalSnap = await get(userBalRef);
@@ -1302,45 +1400,10 @@
 
         update(orderRef, updates)
         .then(() => {
+            if (isNavMode) toggleNavigationMode();
             showCoinEffect();
             alert("Entrega e Pagamento Confirmados!");
         });
-    };
-
-    // Ajuste apenas para o status 'caminho' que ficou fora da lógica acima
-    const originalUpdateStatus = window.updateStatus;
-    window.updateStatus = async (key, status) => {
-        if (status === 'caminho') {
-            if (!confirm("Tem certeza que você finalizou a coleta?")) return;
-            update(ref(db, `orders/${key}`), { status: 'caminho', pickedUpAt: Date.now() });
-            return;
-        }
-        
-        const orderSnap = await get(ref(db, `orders/${key}`));
-        const o = orderSnap.val();
-        if(!o) return;
-
-        if (status === 'pago') {
-            if (o.paymentMethod !== 'pix') {
-                pendingPaymentKey = key;
-                document.getElementById('input-payment-obs').value = '';
-                document.getElementById('check-troco-pix').checked = false;
-                document.getElementById('check-troco-wallet').checked = false;
-                document.getElementById('input-valor-troco').value = '';
-                document.getElementById('div-valor-troco').style.display = 'none';
-                
-                if (o.paymentMethod === 'especie') {
-                    document.getElementById('troco-pix-section').style.display = 'block';
-                } else {
-                    document.getElementById('troco-pix-section').style.display = 'none';
-                }
-                
-                document.getElementById('modal-payment-obs').style.display = 'flex';
-                return;
-            }
-            if (!confirm("Confirmar entrega?")) return;
-        }
-        window.finalStepUpdateStatus(key);
     };
 
     function showCoinEffect() {
