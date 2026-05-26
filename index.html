@@ -1086,7 +1086,14 @@
         const clientPhone = c.contato.replace(/\D/g,'');
         
         const hasReward = o.items.some(i => i.isReward);
+        const hasIceCream = o.items.some(i => i.category === 'Sorvetes' || i.name.toLowerCase().includes('sorvete'));
         const hasFreeShipping = o.deliveryFee === 0;
+
+        const iceCreamTag = hasIceCream ? `
+            <div style="background: #0984e3; color: white; padding: 12px; border-radius: 12px; text-align: center; font-weight: 900; font-size: 16px; margin-bottom: 15px; border: 3px dashed #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.2); animation: pulse 2s infinite;">
+                <i class="fa-solid fa-snowflake"></i> ATENÇÃO: SORVETE NO PEDIDO ! <i class="fa-solid fa-ice-cream"></i>
+            </div>
+        ` : "";
 
         let actionButton = "";
         if (type === 'ready') {
@@ -1102,6 +1109,7 @@
 
         return `
             <div class="order-card ${type} ${o.status === 'sua_rota' ? 'on-route' : ''}">
+                ${iceCreamTag}
                 <div class="order-header">
                     <div style="display:flex; flex-direction:column; gap:5px;">
                         ${statusBadge}
