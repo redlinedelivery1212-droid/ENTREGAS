@@ -459,6 +459,21 @@
         </div>
     </div>
 
+    <!-- MODAL COLETAR MAQUININHA -->
+    <div id="modal-collect-machine" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:17000; align-items:center; justify-content:center;">
+        <div style="background:white; width:90%; max-width:350px; padding:30px; border-radius:25px; text-align:center;">
+            <div style="background:#e0f2fe; width:70px; height:70px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 20px auto; color:#0369a1; font-size:32px;">
+                <i class="fa-solid fa-credit-card"></i>
+            </div>
+            <h3 style="margin-bottom:10px; color:#111;">Pagamento em Cartão</h3>
+            <p style="font-size:14px; color:#555; line-height:1.5; margin-bottom:25px;">Este pedido é pago na <b>Maquininha</b>. Certifique-se de que ela está com você antes de sair!</p>
+            <button class="btn btn-success" style="width:100%; background:#0369a1; padding:18px;" onclick="confirmMachineCollection()">
+                <i class="fa-solid fa-check"></i> COLETEI A MAQUININHA
+            </button>
+            <button class="btn" style="background:none; color:#888; margin-top:15px; font-weight:bold;" onclick="document.getElementById('modal-collect-machine').style.display='none'">VOLTAR</button>
+        </div>
+    </div>
+
     <!-- MODAL PIN DE SEGURANÇA -->
     <div id="modal-pin" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:11000; align-items:center; justify-content:center;">
         <div style="background:white; width:85%; max-width:300px; padding:30px; border-radius:25px; text-align:center;">
@@ -1245,6 +1260,14 @@
     let currentProblemKey = null;
     let pendingAction = null;
     let pendingPaymentKey = null;
+    let pendingCollectKey = null;
+
+    window.confirmMachineCollection = () => {
+        const key = pendingCollectKey;
+        update(ref(db, `orders/${key}`), { status: 'caminho', pickedUpAt: Date.now() });
+        document.getElementById('modal-collect-machine').style.display = 'none';
+        document.getElementById('drawer-coleta').style.display = 'none';
+    };
 
     window.confirmPaymentWithObs = () => {
         const obs = document.getElementById('input-payment-obs').value;
@@ -1376,6 +1399,15 @@
 
     window.updateStatus = async (key, status) => {
         if (status === 'caminho') {
+            const orderSnap = await get(ref(db, `orders/${key}`));
+            const o = orderSnap.val();
+            
+            if (o.paymentMethod === 'credito') {
+                pendingCollectKey = key;
+                document.getElementById('modal-collect-machine').style.display = 'flex';
+                return;
+            }
+
             if (!confirm("Tem certeza que você finalizou a coleta?")) return;
             update(ref(db, `orders/${key}`), { status: 'caminho', pickedUpAt: Date.now() });
             return;
