@@ -405,6 +405,11 @@
                     <h3 style="font-size: 16px;">Pedidos Ocultos (Sem Coleta)</h3>
                     <i class="fa-solid fa-xmark" onclick="document.getElementById('drawer-coleta').style.display='none'" style="font-size: 20px;"></i>
                 </div>
+                
+                <button class="btn" style="width: 100%; background: #f1c40f; color: #000; margin-bottom: 15px; height: 50px; font-size: 13px;" onclick="pullOrdersFromManager()">
+                    <i class="fa-solid fa-cloud-arrow-down"></i> PUXAR PEDIDO DA GERÊNCIA
+                </button>
+
                 <div id="list-ready"></div>
             </div>
         </div>
@@ -874,6 +879,55 @@
     window.closeGeneralMap = function() {
         document.getElementById('modal-general-map').style.display = 'none';
     };
+
+    window.pullOrdersFromManager = async () => {
+        const listReady = document.getElementById('list-ready');
+        listReady.innerHTML = "<p style='text-align:center; font-size:12px; color:#666;'>Buscando pedidos disponíveis...</p>";
+        
+        const snap = await get(ref(db, 'orders'));
+        const data = snap.val();
+        
+        if (data) {
+            const available = Object.entries(data).filter(([k, o]) => 
+                (o.status === 'pago_confirmado' || o.status === 'preparando') && o.driverId !== currentDriverId
+            );
+
+            if (available.length === 0) {
+                listReady.innerHTML = "<p style='text-align:center; font-size:12px; color:red; padding:20px;'>Nenhum pedido disponível para puxar no momento.</p>";
+                return;
+            }
+
+            listReady.innerHTML = "";
+            available.forEach(([key, o]) => {
+                listReady.innerHTML += `
+                    <div class="order-card" style="border-left: 5px solid #f1c40f; padding: 12px; margin-bottom: 10px; background: #fffdf0;">
+                        <div style="font-weight: 900; font-size: 13px; margin-bottom: 5px;">${o.cliente.nome.toUpperCase()}</div>
+                        <div style="font-size: 11px; color: #666; margin-bottom: 10px;">
+                            <i class="fa-solid fa-house"></i> ${o.cliente.bairro}<br>
+                            <i class="fa-solid fa-money-bill"></i> R$ ${o.total.toFixed(2)}
+                        </div>
+                        <button class="btn btn-purple" style="width: 100%; padding: 8px; font-size: 11px;" onclick="takeOrderOwnership('${key}')">
+                            <i class="fa-solid fa-hand-holding-hand"></i> PUXAR PARA MINHA LISTA
+                        </button>
+                    </div>
+                `;
+            });
+        }
+    };
+
+    window.takeOrderOwnership = async (key) => {
+        if (!confirm("Deseja puxar este pedido para sua responsabilidade?")) return;
+        
+        const updates = {
+            driverId: currentDriverId,
+            driverName: currentDriverName,
+            status: 'preparando'
+        };
+        
+        await update(ref(db, `orders/${key}`), updates);
+        alert("Pedido puxado! Ele agora aparecerá na sua tela principal.");
+        document.getElementById('drawer-coleta').style.display = 'none';
+    };
     let currentDriverName = localStorage.getItem('redline_driver_name');
 
     if (!currentDriverId) {
@@ -1057,32 +1111,58 @@
         const timePickup = o.pickedUpAt ? new Date(o.pickedUpAt).toLocaleTimeString('pt-BR', timeOptions) : '--:--';
         const walletRefundHtml = o.trocoWalletValue ? `<div style="color: #6c5ce7; font-weight: 900; font-size: 10px; margin-top: 5px;"><i class="fa-solid fa-wallet"></i> TROCO CARTEIRA: R$ ${parseFloat(o.trocoWalletValue).toFixed(2)}</div>` : "";
         
+        let correctionBtn = "";
+        if (o.correctionStatus === 'pending') {
+            correctionBtn = `<div style="background: #f1c40f; color: #000; font-size: 9px; font-weight: bold; padding: 4px; border-radius: 4px; margin-top: 5px; text-align: center;">SOLICITAÇÃO PENDENTE</div>`;
+        } else if (o.correctionStatus === 'accepted') {
+            correctionBtn = `<div style="background: #2ecc71; color: #fff; font-size: 9px; font-weight: bold; padding: 4px; border-radius: 4px; margin-top: 5px; text-align: center;">CORREÇÃO ACEITA</div>`;
+        } else {
+            correctionBtn = `<button onclick="requestFeeCorrection('${key}')" style="background:#e67e22; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:9px; font-weight:bold; cursor:pointer; margin-top: 5px; width: 100%;">SOLICITAR CORREÇÃO</button>`;
+        }
+
         return `
             <div class="order-card" style="opacity: 0.8; border-left: 5px solid #28a745; padding: 10px 15px; margin-bottom: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
+                    <div style="flex: 1;">
                         <strong style="font-size: 13px;">PEDIDO ${orderNum} - ${o.cliente.nome}</strong>
                         ${walletRefundHtml}
-                        <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <strong style="font-size: 13px;">PEDIDO ${orderNum} - ${o.cliente.nome}</strong>
                         <div style="font-size: 11px; color: #666; margin-top: 3px;">
                             <i class="fa-solid fa-truck-ramp-box"></i> Coleta: ${timePickup} | 
                             <i class="fa-solid fa-check"></i> Entrega: ${timeDelivery}
                         </div>
-                        ${(o.cliente.lat && o.cliente.lng) ? 
-                            `<button onclick="window.open('https://www.google.com/maps/search/?api=1&query=${o.cliente.lat},${o.cliente.lng}')" style="background:#3498db; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; margin-top:5px; cursor:pointer;"><i class="fa-solid fa-location-dot"></i> Ver Local da Entrega</button>` : ''
-                        }
+                        <div style="display: flex; gap: 5px; margin-top: 5px;">
+                            ${(o.cliente.lat && o.cliente.lng) ? 
+                                `<button onclick="window.open('https://www.google.com/maps/search/?api=1&query=${o.cliente.lat},${o.cliente.lng}')" style="background:#3498db; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; cursor:pointer;"><i class="fa-solid fa-location-dot"></i> Local Cliente</button>` : ''
+                            }
+                            ${(o.driverLatConfirm && o.driverLngConfirm) ? 
+                                `<button onclick="window.open('https://www.google.com/maps/search/?api=1&query=${o.driverLatConfirm},${o.driverLngConfirm}')" style="background:#27ae60; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; cursor:pointer;"><i class="fa-solid fa-motorcycle"></i> Onde Entreguei</button>` : ''
+                            }
+                        </div>
                     </div>
-                    <div style="text-align: right;">
+                    <div style="text-align: right; min-width: 80px;">
                         <span style="font-weight: bold; color: var(--success); font-size: 13px; display: block;">+ R$ ${(o.driverEarning || o.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
                         <small style="font-size: 9px; color: #888; font-weight: 900; text-transform: uppercase; background: #eee; padding: 1px 4px; border-radius: 3px;">${o.zoneName || 'PADRÃO'}</small>
+                        ${correctionBtn}
                     </div>
                 </div>
             </div>
         `;
     }
+
+    window.requestFeeCorrection = async (key) => {
+        const suggested = prompt("Digite o valor sugerido para a taxa de entrega:");
+        if (suggested === null || suggested === "" || isNaN(suggested.replace(',', '.'))) return;
+
+        const val = parseFloat(suggested.replace(',', '.'));
+        
+        await update(ref(db, `orders/${key}`), {
+            correctionStatus: 'pending',
+            suggestedFeeValue: val,
+            correctionRequestedAt: Date.now()
+        });
+
+        alert("Solicitação enviada para a gerência! Aguarde a aprovação.");
+    };
 
     function createOrderCard(key, o, type, orderNum = "") {
         const c = o.cliente || {};
