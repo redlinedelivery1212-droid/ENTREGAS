@@ -1336,14 +1336,23 @@ window.confirmStaffOrder = async (itemName) => {
         let durationsToday = [];
         let monthlyHistory = {};
 
-        const getBrazDate = (date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(date);
+        const getBrazDate = (date) => {
+        if (!date || isNaN(new Date(date).getTime())) return "0000-00-00";
+        try {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(date);
+        } catch (e) {
+            return "0000-00-00";
+        }
+    };
         const now = new Date();
         const todayStr = getBrazDate(now);
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
         if (data) {
-            const entries = Object.entries(data).sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+            const entries = Object.entries(data)
+            .filter(([_, ord]) => ord && ord.timestamp && !isNaN(new Date(ord.timestamp).getTime()))
+            .sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
             
             entries.forEach(([key, o]) => {
                 const orderDateObj = new Date(o.timestamp);
