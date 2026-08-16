@@ -1232,7 +1232,7 @@ window.confirmStaffOrder = async (itemName) => {
 
     window.openWppModal = (phone, store) => {
         activeClientPhone = phone;
-        activeStoreName = store || 'RedLine Delivery';
+        activeStoreName = (store && store !== "undefined") ? store : 'REDLINE DELIVERY';
         document.getElementById('modal-wpp-options').style.display = 'flex';
     };
 
@@ -1295,8 +1295,31 @@ window.confirmStaffOrder = async (itemName) => {
         location.reload();
     };
 
+    let lastOrderDataString = "";
+    let lastMyReadyCount = -1; 
     onValue(ref(db, 'orders'), (snap) => {
-        const data = snap.val();
+        const data = snap.val() || {};
+        const currentDataString = JSON.stringify(data);
+        
+        // Conta quantos pedidos estão atribuídos a VOCÊ e estão aguardando coleta
+        const myOrders = Object.values(data).filter(o => o && o.driverId === currentDriverId && o.status === 'preparando');
+        const myReadyOrdersCount = myOrders.length;
+
+        // Toca o som se a quantidade de pedidos PARA VOCÊ aumentou
+        if (lastMyReadyCount !== -1 && myReadyOrdersCount > lastMyReadyCount) {
+            const sound = document.getElementById('notif-sound');
+            if(sound) {
+                sound.currentTime = 0;
+                sound.play().catch(e => console.error("Erro ao tocar som:", e));
+            }
+        }
+
+        if (currentDataString === lastOrderDataString) return;
+
+        lastMyReadyCount = myReadyOrdersCount;
+        lastOrderDataString = currentDataString;
+        lastOrderDataString = currentDataString;
+
         renderOrders(data);
         if (currentDriverId) {
             if (!generalMap) initInlineMap();
@@ -1304,11 +1327,13 @@ window.confirmStaffOrder = async (itemName) => {
         }
         
         const loader = document.getElementById('loading-screen');
-        if(loader) {
+        if(loader && loader.style.display !== 'none') {
             setTimeout(() => {
                 loader.style.transition = "0.5s";
                 loader.style.opacity = "0";
-                setTimeout(() => loader.remove(), 500);
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                }, 500);
             }, 1000);
         }
     });
@@ -1336,37 +1361,37 @@ window.confirmStaffOrder = async (itemName) => {
         let durationsToday = [];
         let monthlyHistory = {};
 
-        const getBrazDate = (date) => {
-        if (!date || isNaN(new Date(date).getTime())) return "0000-00-00";
-        try {
-            return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(date);
-        } catch (e) {
-            return "0000-00-00";
-        }
-    };
         const now = new Date();
-        const todayStr = getBrazDate(now);
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
+        
+        // Formata a data atual para o fuso de Brasília (AAAA-MM-DD)
+        const todayStr = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo' }).format(now);
 
         if (data) {
-            const entries = Object.entries(data)
-            .filter(([_, ord]) => ord && ord.timestamp && !isNaN(new Date(ord.timestamp).getTime()))
-            .sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+            const allEntries = Object.entries(data).filter(([_, ord]) => ord && ord.timestamp);
             
-            entries.forEach(([key, o]) => {
+            // Filtra os pedidos do dia usando o fuso de Brasília
+            const dailyOrders = allEntries.filter(([_, ord]) => {
+                const d = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(ord.timestamp));
+                return d === todayStr;
+            }).sort((a, b) => a[1].timestamp - b[1].timestamp);
+
+            const sortedEntries = allEntries.sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+            
+            sortedEntries.forEach(([key, o]) => {
                 const orderDateObj = new Date(o.timestamp);
-                const orderDate = getBrazDate(orderDateObj);
+                const orderDate = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo' }).format(orderDateObj);
 
                 if (o.status === 'pago' && o.driverId === currentDriverId) {
                     const fee = parseFloat(o.driverEarning || o.deliveryFee || 0);
                     myTotalGeneral += fee;
                     myCountGeneral++;
 
-                    // Agrupamento Mensal
                     const sortKey = (orderDateObj.getFullYear() * 100) + (orderDateObj.getMonth() + 1);
-                    const displayMonth = orderDateObj.toLocaleString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' });
-                    if(!monthlyHistory[sortKey]) monthlyHistory[sortKey] = { rev: 0, qty: 0, name: displayMonth };
+                    if(!monthlyHistory[sortKey]) {
+                        monthlyHistory[sortKey] = { rev: 0, qty: 0, name: orderDateObj.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }) };
+                    }
                     monthlyHistory[sortKey].rev += fee;
                     monthlyHistory[sortKey].qty++;
 
@@ -1378,25 +1403,18 @@ window.confirmStaffOrder = async (itemName) => {
                     if (orderDate === todayStr) {
                         myTotalToday += fee;
                         myCountToday++;
-
                         if (o.pickedUpAt && o.deliveredAt) {
-                            const durationMin = Math.round((o.deliveredAt - o.pickedUpAt) / 60000);
-                            durationsToday.push({ name: o.cliente.nome, time: durationMin });
+                            durationsToday.push({ name: o.cliente.nome, time: Math.round((o.deliveredAt - o.pickedUpAt) / 60000) });
                         }
-
-                        const dailyOrders = Object.entries(data).filter(([_, ord]) => getBrazDate(new Date(ord.timestamp)) === orderDate).sort((a, b) => a[1].timestamp - b[1].timestamp);
                         const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
                         listHistory.innerHTML += createHistoryCard(key, o, orderNum);
                     }
                 } else if (o.status === 'preparando' && o.driverId === currentDriverId) {
                     countReady++;
-                    const dailyOrders = Object.entries(data).filter(([_, ord]) => getBrazDate(new Date(ord.timestamp)) === orderDate).sort((a, b) => a[1].timestamp - b[1].timestamp);
                     const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
                     listReady.innerHTML += createOrderCard(key, o, 'ready', orderNum);
-                } 
-                else if ((o.status === 'caminho' || o.status === 'sua_rota') && o.driverId === currentDriverId) {
+                } else if ((o.status === 'caminho' || o.status === 'sua_rota') && o.driverId === currentDriverId) {
                     countInRoute++;
-                    const dailyOrders = Object.entries(data).filter(([_, ord]) => getBrazDate(new Date(ord.timestamp)) === orderDate).sort((a, b) => a[1].timestamp - b[1].timestamp);
                     const orderNum = "#" + String(dailyOrders.findIndex(([k, _]) => k === key) + 1).padStart(3, '0');
                     listShipping.innerHTML += createOrderCard(key, o, 'shipping', orderNum);
                 }
@@ -1825,7 +1843,7 @@ window.confirmStaffOrder = async (itemName) => {
         const foneCliente = o.cliente.contato.replace(/\D/g, '');
         const foneRedline = "559881422644";
         const nomeCliente = o.cliente.nome.toUpperCase();
-        const store = o.store || 'RedLine Delivery';
+        const store = (o.store && o.store !== "undefined") ? o.store : 'REDLINE DELIVERY';
 
         let msg = "";
         let finalFone = "";
